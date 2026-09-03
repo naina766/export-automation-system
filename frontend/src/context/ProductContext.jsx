@@ -30,7 +30,6 @@ export const ProductProvider = ({ children }) => {
         });
       }
     } catch (err) {
-      console.error('Failed to load product catalog:', err);
       setError('Unable to load product catalog.');
     } finally {
       setLoading(false);

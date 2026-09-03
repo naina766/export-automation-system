@@ -23,6 +23,7 @@ import DataTable from '../components/DataTable';
 import StatusBadge from '../components/StatusBadge';
 import Notification from '../components/Notification';
 import LoadingSpinner from '../components/LoadingSpinner';
+import { formatBusinessError } from '../services/errorHandler';
 
 const COUNTRIES = [
   'United States',
@@ -83,7 +84,10 @@ export const Upload = () => {
       const res = await apiService.getLeads();
       setLeads(res.leads || []);
     } catch (err) {
-      console.error(err);
+      setNotification({
+        type: 'error',
+        message: formatBusinessError(err, 'Unable to load buyers right now.')
+      });
     } finally {
       setLoading(false);
     }
@@ -116,22 +120,22 @@ export const Upload = () => {
 
       const t1 = setTimeout(() => {
         setSearchStep(2);
-        setSearchStage('Connecting to Search API provider...');
+        setSearchStage('Connecting to global buyer directory...');
       }, 400);
 
       const t2 = setTimeout(() => {
         setSearchStep(3);
-        setSearchStage(`Querying external index for live ${buyerType || 'distributor'} entities...`);
+        setSearchStage(`Locating international ${buyerType || 'commercial'} prospects...`);
       }, 900);
 
       const t3 = setTimeout(() => {
         setSearchStep(4);
-        setSearchStage('Parsing business profiles, extracting websites & domains...');
+        setSearchStage('Evaluating company profiles & websites...');
       }, 1500);
 
       const t4 = setTimeout(() => {
         setSearchStep(5);
-        setSearchStage('Inspecting public contact points & validating email syntax...');
+        setSearchStage('Verifying business contact points...');
       }, 2100);
 
       const res = await apiService.searchBuyers(payload);
@@ -149,16 +153,16 @@ export const Upload = () => {
 
       setNotification({
         type: 'success',
-        message: `Discovered ${count} live international businesses from web search and added to pipeline.`
+        message: `Discovered ${count} international buyers and added to pipeline.`
       });
     } catch (err) {
       const errDetail = err.response?.data?.detail;
       if (errDetail?.error === 'SEARCH_PROVIDER_NOT_CONFIGURED') {
-        setConfigError(errDetail.message || 'Search provider API key is not configured.');
+        setConfigError('Buyer discovery is not connected yet.');
       } else {
         setNotification({
           type: 'error',
-          message: typeof errDetail === 'string' ? errDetail : (errDetail?.message || 'Failed to execute live buyer search.')
+          message: formatBusinessError(err, 'Buyer discovery could not be completed.')
         });
       }
     } finally {
@@ -297,20 +301,17 @@ export const Upload = () => {
       />
 
       {/* Page Header */}
-      <div className="p-5 rounded-2xl border border-[rgba(148,163,184,0.12)] bg-[#0F172A] flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-xl">
+      <div className="p-5 rounded-2xl border border-[#1E293B] bg-[#0B1220] flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-xl">
         <div className="flex items-center gap-3.5">
-          <div className="p-2.5 rounded-xl bg-blue-500/10 text-blue-400 border border-blue-500/20">
+          <div className="p-2.5 rounded-xl bg-purple-500/10 text-purple-400 border border-purple-500/20">
             <UploadCloud className="w-6 h-6" />
           </div>
           <div>
             <h1 className="text-base sm:text-lg font-bold text-white flex items-center gap-2">
-              <span>Import Leads</span>
-              <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700 uppercase">
-                Utility
-              </span>
+              <span>Import Buyers</span>
             </h1>
             <p className="text-xs text-[#94A3B8] mt-0.5">
-              Import an existing external lead dataset when needed.
+              Already have a buyer list? Import it here.
             </p>
           </div>
         </div>
@@ -319,35 +320,32 @@ export const Upload = () => {
           <button
             onClick={() => navigate('/classify')}
             disabled={leads.length === 0}
-            className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white text-xs font-bold shadow-lg transition-all flex items-center gap-2 disabled:opacity-50"
+            className="px-4 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold shadow-lg transition-all flex items-center gap-2 disabled:opacity-50"
           >
             <Sparkles className="w-4 h-4" />
-            <span>AI Qualify Leads</span>
+            <span>Qualify Buyers</span>
             <ArrowRight className="w-4 h-4" />
           </button>
         </div>
       </div>
 
-      {/* Unconfigured Search Provider Notice */}
+      {/* Unconfigured Search Notice */}
       {configError && (
-        <div className="p-5 rounded-xl bg-amber-950/40 border border-amber-500/40 text-amber-200 space-y-3">
+        <div className="p-5 rounded-xl bg-amber-950/30 border border-amber-500/30 text-amber-200 space-y-3">
           <div className="flex items-center gap-2 text-sm font-bold text-amber-300">
             <ShieldAlert className="w-5 h-5 text-amber-400 flex-shrink-0" />
-            <span>Live Search Unavailable</span>
+            <span>Buyer Discovery Needs Setup</span>
           </div>
           <p className="text-xs leading-relaxed text-slate-200">
-            Search Provider is not configured.
+            Buyer discovery connection is not yet configured. Please connect your discovery service in Settings.
           </p>
-          <div className="bg-[#0b0f19] p-3 rounded-lg border border-amber-900/50 text-xs font-mono text-amber-300">
-            Configure your Search API credentials in Settings → System Health.
-          </div>
           <div className="pt-1">
             <button
               type="button"
               onClick={() => navigate('/settings')}
-              className="px-4 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold transition-colors inline-flex items-center gap-1.5"
+              className="px-4 py-2 rounded-lg bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold transition-colors inline-flex items-center gap-1.5 shadow-md"
             >
-              <span>Go to Settings</span>
+              <span>Update Settings</span>
               <ArrowRight className="w-3.5 h-3.5" />
             </button>
           </div>
@@ -447,12 +445,12 @@ export const Upload = () => {
 
           <div className="flex items-center justify-between pt-1">
             <span className="text-[11px] text-slate-400">
-              * Queries real external search API and validates publicly available contact information.
+              * Discovers commercial buyers and verifies available contact details.
             </span>
             <button
               type="submit"
               disabled={searching}
-              className="px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold shadow-md transition-all flex items-center gap-2 disabled:opacity-50"
+              className="px-6 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold shadow-md transition-all flex items-center gap-2 disabled:opacity-50"
             >
               <Search className="w-4 h-4" />
               <span>{searching ? 'Finding Buyers...' : 'Find Buyers'}</span>
@@ -462,24 +460,24 @@ export const Upload = () => {
 
         {/* Real-time Progress Animation */}
         {searching && (
-          <div className="p-6 rounded-xl bg-[#0b0f19] border border-blue-500/30 text-center space-y-3 max-w-md mx-auto my-4">
+          <div className="p-6 rounded-xl bg-[#050816] border border-purple-500/30 text-center space-y-3 max-w-md mx-auto my-4">
             <LoadingSpinner text={searchStage || 'Finding international buyers...'} />
-            <div className="text-left space-y-2 text-xs font-medium pt-3 border-t border-[#222f4c]">
+            <div className="text-left space-y-2 text-xs font-medium pt-3 border-t border-[#1E293B]">
               <div className="flex items-center gap-2 text-emerald-400">
                 <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
-                <span>Search query created</span>
+                <span>Target criteria defined</span>
               </div>
               <div className={`flex items-center gap-2 ${searchStep >= 2 ? 'text-emerald-400' : 'text-slate-500'}`}>
                 {searchStep >= 2 ? <CheckCircle2 className="w-4 h-4 flex-shrink-0" /> : <Clock className="w-4 h-4 flex-shrink-0" />}
-                <span>Search API connected</span>
+                <span>Connected to buyer directory</span>
               </div>
               <div className={`flex items-center gap-2 ${searchStep >= 3 ? 'text-emerald-400' : 'text-slate-500'}`}>
                 {searchStep >= 3 ? <CheckCircle2 className="w-4 h-4 flex-shrink-0" /> : <Clock className="w-4 h-4 flex-shrink-0" />}
-                <span>Search results received</span>
+                <span>Commercial buyers located</span>
               </div>
               <div className={`flex items-center gap-2 ${searchStep >= 4 ? 'text-emerald-400' : 'text-slate-500'}`}>
                 {searchStep >= 4 ? <CheckCircle2 className="w-4 h-4 flex-shrink-0" /> : <Clock className="w-4 h-4 flex-shrink-0" />}
-                <span>Businesses identified & domains extracted</span>
+                <span>Company profiles analyzed</span>
               </div>
               <div className={`flex items-center gap-2 ${searchStep >= 5 ? 'text-emerald-400' : 'text-slate-500'}`}>
                 {searchStep >= 5 ? <CheckCircle2 className="w-4 h-4 flex-shrink-0" /> : <Clock className="w-4 h-4 flex-shrink-0" />}
@@ -568,7 +566,7 @@ export const Upload = () => {
               onClick={() => setViewFilter('invalid')}
               className={`px-3 py-1 rounded transition-all ${viewFilter === 'invalid' ? 'bg-rose-600 text-white' : 'text-slate-400 hover:text-white'}`}
             >
-              Review Suppressed / Invalid
+              Review Excluded Contacts
             </button>
           </div>
         </div>
@@ -577,18 +575,18 @@ export const Upload = () => {
           <div className="p-3.5 rounded-xl bg-amber-950/30 border border-amber-500/30 text-amber-200 text-xs flex items-center gap-2.5">
             <ShieldAlert className="w-4 h-4 text-amber-400 flex-shrink-0" />
             <span>
-              <b>Lead Suppression Policy:</b> Rows with invalid syntax, missing email addresses, or previous campaign contact entries are automatically blocked from entering the active Gmail SMTP outreach queue.
+              <b>Contact Protection:</b> Contacts with incomplete information or previous outreach entries are automatically protected and excluded from outreach.
             </span>
           </div>
         )}
 
         {loading ? (
-          <LoadingSpinner text="Fetching lead records..." />
+          <LoadingSpinner text="Loading buyers..." />
         ) : (
           <DataTable
             columns={columns}
             data={displayedLeads}
-            emptyMessage={leads.length === 0 ? "No leads available yet. Discover live buyers or upload a CSV to begin." : "No buyer leads matching selected filter."}
+            emptyMessage={leads.length === 0 ? "No buyers in list yet. Use Discover Buyers to find international prospects." : "No buyers matching selected filter."}
           />
         )}
       </div>

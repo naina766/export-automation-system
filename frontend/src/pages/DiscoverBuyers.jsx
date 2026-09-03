@@ -23,6 +23,7 @@ import {
 import apiService from '../services/api';
 import { useProduct } from '../context/ProductContext';
 import Notification from '../components/Notification';
+import { formatBusinessError } from '../services/errorHandler';
 import StatusBadge from '../components/StatusBadge';
 import LoadingSpinner from '../components/LoadingSpinner';
 
@@ -93,7 +94,7 @@ export const DiscoverBuyers = () => {
       setConfigError(null);
       setNotification({ type: '', message: '' });
       setSearchStep(1);
-      setSearchStage('Searching live sources...');
+      setSearchStage('Searching international markets...');
 
       const payload = {
         product_id: selectedProduct?.id,
@@ -105,30 +106,30 @@ export const DiscoverBuyers = () => {
         auto_ingest: true
       };
 
-      // Real-time progress animation steps matching spec
+      // Real-time progress animation steps with business-focused labels
       const t1 = setTimeout(() => {
         setSearchStep(2);
-        setSearchStage('Search API connected');
+        setSearchStage('Connecting to global buyer directory...');
       }, 350);
 
       const t2 = setTimeout(() => {
         setSearchStep(3);
-        setSearchStage('Results retrieved');
+        setSearchStage('International businesses located...');
       }, 800);
 
       const t3 = setTimeout(() => {
         setSearchStep(4);
-        setSearchStage('Business information extracted');
+        setSearchStage('Evaluating company profiles...');
       }, 1400);
 
       const t4 = setTimeout(() => {
         setSearchStep(5);
-        setSearchStage('Contact information processed');
+        setSearchStage('Verifying contact details...');
       }, 2000);
 
       const t5 = setTimeout(() => {
         setSearchStep(6);
-        setSearchStage('Duplicate records removed');
+        setSearchStage('Preparing verified prospects...');
       }, 2600);
 
       const res = await apiService.searchBuyers(payload);
@@ -145,16 +146,16 @@ export const DiscoverBuyers = () => {
       const count = res.total_found ?? res.count ?? discoveredBuyers.length;
       setNotification({
         type: 'success',
-        message: `Discovered ${count} live international businesses from web search.`
+        message: `Discovered ${count} potential international buyers.`
       });
     } catch (err) {
       const errDetail = err.response?.data?.detail;
       if (errDetail?.error === 'SEARCH_PROVIDER_NOT_CONFIGURED') {
-        setConfigError(errDetail.message || 'Search provider is not configured. Add SEARCH_API_KEY and SEARCH_ENGINE_ID in the backend environment.');
+        setConfigError('Buyer discovery is not connected yet. Please update your connection in Settings.');
       } else {
         setNotification({
           type: 'error',
-          message: typeof errDetail === 'string' ? errDetail : (errDetail?.message || 'Buyer search failed. Please check your search API credentials.')
+          message: formatBusinessError(err, "Buyer discovery couldn't be completed. Please try again.")
         });
       }
     } finally {
@@ -193,7 +194,7 @@ export const DiscoverBuyers = () => {
           <div>
             <h1 className="text-base sm:text-lg font-bold text-[#F8FAFC]">Discover International Buyers</h1>
             <p className="text-xs text-[#94A3B8] mt-0.5">
-              Find real potential buyers using live search APIs.
+              Find verified international buyers for export sales.
             </p>
           </div>
         </div>
@@ -210,26 +211,23 @@ export const DiscoverBuyers = () => {
         </div>
       </div>
 
-      {/* Unconfigured Search Provider Notice */}
+      {/* Unconfigured Search Notice */}
       {configError && (
-        <div className="p-5 rounded-xl bg-amber-950/40 border border-amber-500/40 text-amber-200 space-y-3">
+        <div className="p-5 rounded-xl bg-amber-950/30 border border-amber-500/30 text-amber-200 space-y-3">
           <div className="flex items-center gap-2 text-sm font-bold text-amber-300">
             <ShieldAlert className="w-5 h-5 text-amber-400 flex-shrink-0" />
-            <span>Live Search Unavailable</span>
+            <span>Buyer Discovery Needs Setup</span>
           </div>
           <p className="text-xs leading-relaxed text-slate-200">
-            Search Provider is not configured.
+            {configError}
           </p>
-          <div className="bg-[#0b0f19] p-3 rounded-lg border border-amber-900/50 text-xs font-mono text-amber-300">
-            Configure your Search API credentials in Settings → System Health.
-          </div>
           <div className="pt-1">
             <button
               type="button"
               onClick={() => navigate('/settings')}
-              className="px-4 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold transition-colors inline-flex items-center gap-1.5"
+              className="px-4 py-2 rounded-lg bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold transition-colors inline-flex items-center gap-1.5 shadow-md"
             >
-              <span>Go to Settings</span>
+              <span>Update Settings</span>
               <ArrowRight className="w-3.5 h-3.5" />
             </button>
           </div>
@@ -394,31 +392,31 @@ export const DiscoverBuyers = () => {
 
         {searching ? (
           <div className="p-8 rounded-xl bg-[#080D1D] border border-blue-500/30 text-center space-y-4 max-w-md mx-auto">
-            <LoadingSpinner text={searchStage || 'Searching live sources...'} />
+            <LoadingSpinner text={searchStage || 'Searching international markets...'} />
             <div className="text-left space-y-2 text-xs font-medium pt-3 border-t border-[rgba(148,163,184,0.12)]">
               <div className={`flex items-center gap-2 ${searchStep >= 1 ? 'text-emerald-400' : 'text-slate-500'}`}>
                 {searchStep >= 1 ? <CheckCircle2 className="w-4 h-4 flex-shrink-0" /> : <Clock className="w-4 h-4 flex-shrink-0" />}
-                <span>Searching live sources...</span>
+                <span>Searching international markets...</span>
               </div>
               <div className={`flex items-center gap-2 ${searchStep >= 2 ? 'text-emerald-400' : 'text-slate-500'}`}>
                 {searchStep >= 2 ? <CheckCircle2 className="w-4 h-4 flex-shrink-0" /> : <Clock className="w-4 h-4 flex-shrink-0" />}
-                <span>Search API connected</span>
+                <span>Connecting to global buyer directory...</span>
               </div>
               <div className={`flex items-center gap-2 ${searchStep >= 3 ? 'text-emerald-400' : 'text-slate-500'}`}>
                 {searchStep >= 3 ? <CheckCircle2 className="w-4 h-4 flex-shrink-0" /> : <Clock className="w-4 h-4 flex-shrink-0" />}
-                <span>Results retrieved</span>
+                <span>International businesses located</span>
               </div>
               <div className={`flex items-center gap-2 ${searchStep >= 4 ? 'text-emerald-400' : 'text-slate-500'}`}>
                 {searchStep >= 4 ? <CheckCircle2 className="w-4 h-4 flex-shrink-0" /> : <Clock className="w-4 h-4 flex-shrink-0" />}
-                <span>Business information extracted</span>
+                <span>Evaluating company profiles</span>
               </div>
               <div className={`flex items-center gap-2 ${searchStep >= 5 ? 'text-emerald-400' : 'text-slate-500'}`}>
                 {searchStep >= 5 ? <CheckCircle2 className="w-4 h-4 flex-shrink-0" /> : <Clock className="w-4 h-4 flex-shrink-0" />}
-                <span>Contact information processed</span>
+                <span>Verifying contact details</span>
               </div>
               <div className={`flex items-center gap-2 ${searchStep >= 6 ? 'text-emerald-400' : 'text-slate-500'}`}>
                 {searchStep >= 6 ? <CheckCircle2 className="w-4 h-4 flex-shrink-0" /> : <Clock className="w-4 h-4 flex-shrink-0" />}
-                <span>Duplicate records removed</span>
+                <span>Preparing verified prospects</span>
               </div>
             </div>
           </div>

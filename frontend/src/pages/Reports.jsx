@@ -25,6 +25,7 @@ import StatusBadge from '../components/StatusBadge';
 import DataTable from '../components/DataTable';
 import LoadingSpinner from '../components/LoadingSpinner';
 import Notification from '../components/Notification';
+import { formatBusinessError } from '../services/errorHandler';
 
 export const Reports = () => {
   const navigate = useNavigate();
@@ -42,7 +43,10 @@ export const Reports = () => {
       const res = await apiService.getReport(pid);
       setMetrics(res.metrics || {});
     } catch (err) {
-      setNotification({ type: 'error', message: 'Failed to load report data.' });
+      setNotification({ 
+        type: 'error', 
+        message: formatBusinessError(err, 'Unable to load report data right now.') 
+      });
     } finally {
       setLoading(false);
     }
@@ -56,15 +60,18 @@ export const Reports = () => {
     try {
       setDownloading(true);
       await apiService.downloadReport();
-      setNotification({ type: 'success', message: 'CSV Report downloaded successfully.' });
+      setNotification({ type: 'success', message: 'Report downloaded successfully.' });
     } catch (err) {
-      setNotification({ type: 'error', message: 'Failed to download CSV report.' });
+      setNotification({ 
+        type: 'error', 
+        message: formatBusinessError(err, 'Unable to download report.') 
+      });
     } finally {
       setDownloading(false);
     }
   };
 
-  if (loading) return <LoadingSpinner text="Generating campaign analytics..." />;
+  if (loading) return <LoadingSpinner text="Generating sales analytics..." />;
 
   const activityColumns = [
     {
@@ -93,14 +100,14 @@ export const Reports = () => {
       render: (row) => <StatusBadge status={row.status} />,
     },
     {
-      header: 'Transport',
+      header: 'Channel',
       accessor: 'mode',
-      render: (row) => <span className="text-xs font-mono text-slate-400">Gmail SMTP</span>,
+      render: (row) => <span className="text-xs text-slate-400">Direct Email</span>,
     },
     {
-      header: 'Error / Details',
+      header: 'Delivery Notes',
       accessor: 'error',
-      render: (row) => <span className="text-xs text-rose-400 truncate max-w-xs block">{row.error || '—'}</span>,
+      render: (row) => <span className="text-xs text-slate-400 truncate max-w-xs block">{row.error ? 'Delivery attempted' : 'Delivered'}</span>,
     },
   ];
 
@@ -129,8 +136,8 @@ export const Reports = () => {
       {/* Header & Product Filter & Download Action */}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-[#0B1220] border border-[#1E293B] rounded-2xl p-6 shadow-xl">
         <div>
-          <h1 className="text-base font-bold text-[#F8FAFC] mb-1">Campaign Analytics & Performance Reports</h1>
-          <p className="text-xs text-[#94A3B8]">Audit trail, delivery telemetry, and multi-product conversion analytics.</p>
+          <h1 className="text-base font-bold text-[#F8FAFC] mb-1">Sales Analytics & Outreach Reports</h1>
+          <p className="text-xs text-[#94A3B8]">Audit trail, delivery results, and multi-product conversion analytics.</p>
         </div>
         
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
@@ -156,7 +163,7 @@ export const Reports = () => {
             className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold transition-all shadow-md shadow-purple-600/20 disabled:opacity-40 active:scale-95"
           >
             <Download className="w-4 h-4" />
-            <span>{downloading ? 'Downloading...' : 'Export Full CSV'}</span>
+            <span>{downloading ? 'Downloading...' : 'Export Report'}</span>
           </button>
         </div>
       </div>
@@ -164,13 +171,13 @@ export const Reports = () => {
       {/* KPI Cards Grid */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
         <div className="p-4 rounded-xl bg-[#0B1220] border border-[#1E293B]">
-          <div className="text-xs text-[#94A3B8]">Total Leads</div>
+          <div className="text-xs text-[#94A3B8]">Total Buyers</div>
           <div className="text-2xl font-bold text-cyan-400 mt-1">{total}</div>
           <div className="text-[10px] text-slate-500 mt-1">Discovered pool</div>
         </div>
 
         <div className="p-4 rounded-xl bg-[#0B1220] border border-[#1E293B]">
-          <div className="text-xs text-[#94A3B8]">Qualified</div>
+          <div className="text-xs text-[#94A3B8]">Qualified Buyers</div>
           <div className="text-2xl font-bold text-purple-400 mt-1">{qualified}</div>
           <div className="text-[10px] text-slate-500 mt-1">Commercial B2B</div>
         </div>
@@ -184,7 +191,7 @@ export const Reports = () => {
         <div className="p-4 rounded-xl bg-[#0B1220] border border-[#1E293B]">
           <div className="text-xs text-[#94A3B8]">Emails Sent</div>
           <div className="text-2xl font-bold text-green-400 mt-1">{emailsSent}</div>
-          <div className="text-[10px] text-slate-500 mt-1">Gmail SMTP Dispatched</div>
+          <div className="text-[10px] text-slate-500 mt-1">Direct Dispatches</div>
         </div>
 
         <div className="p-4 rounded-xl bg-[#0B1220] border border-[#1E293B]">
@@ -194,7 +201,7 @@ export const Reports = () => {
         </div>
 
         <div className="p-4 rounded-xl bg-[#0B1220] border border-[#1E293B]">
-          <div className="text-xs text-[#94A3B8]">Success Rate</div>
+          <div className="text-xs text-[#94A3B8]">Delivery Rate</div>
           <div className="text-2xl font-bold text-cyan-400 mt-1">
             {successRate !== null && successRate !== undefined ? `${successRate}%` : '—'}
           </div>
@@ -209,13 +216,13 @@ export const Reports = () => {
         <div className="p-6 rounded-2xl bg-[#0B1220] border border-[#1E293B] space-y-4">
           <div className="flex items-center gap-2">
             <PieChart className="w-4 h-4 text-purple-400" />
-            <h3 className="text-sm font-bold text-white">Audience Segmentation</h3>
+            <h3 className="text-sm font-bold text-white">Buyer Segmentation</h3>
           </div>
 
           <div className="space-y-3 text-xs">
             <div>
               <div className="flex justify-between text-slate-300 mb-1">
-                <span>Commercial Business Leads</span>
+                <span>Commercial Business Buyers</span>
                 <span className="font-bold text-purple-400">{qualified} ({bizPct}%)</span>
               </div>
               <div className="h-2 rounded-full bg-slate-800 overflow-hidden">
@@ -225,7 +232,7 @@ export const Reports = () => {
 
             <div>
               <div className="flex justify-between text-slate-300 mb-1">
-                <span>Individual / Unsegmented</span>
+                <span>Other / Individual Contacts</span>
                 <span className="font-bold text-slate-400">{total - qualified} ({indPct}%)</span>
               </div>
               <div className="h-2 rounded-full bg-slate-800 overflow-hidden">
@@ -238,11 +245,11 @@ export const Reports = () => {
         <div className="p-6 rounded-2xl bg-[#0B1220] border border-[#1E293B] space-y-4">
           <div className="flex items-center gap-2">
             <Globe className="w-4 h-4 text-cyan-400" />
-            <h3 className="text-sm font-bold text-white">Geographic Market Coverage</h3>
+            <h3 className="text-sm font-bold text-white">Market Coverage</h3>
           </div>
 
           <div className="text-xs text-slate-400">
-            <div>Active Markets: <b className="text-white">{metrics?.countries_covered || metrics?.countries_count || 0} Countries</b></div>
+            <div>Active Target Markets: <b className="text-white">{metrics?.countries_covered || metrics?.countries_count || 0} Countries</b></div>
             <div className="flex flex-wrap gap-1.5 mt-3 max-h-36 overflow-y-auto pr-1">
               {(metrics?.countries || []).map((country, idx) => (
                 <span key={idx} className="px-2 py-0.5 rounded bg-[#050816] border border-[#1E293B] text-slate-300 text-[11px]">
@@ -259,16 +266,16 @@ export const Reports = () => {
         <div className="p-6 rounded-2xl bg-[#0B1220] border border-[#1E293B] space-y-4">
           <div className="flex items-center gap-2">
             <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-            <h3 className="text-sm font-bold text-white">Data Hygiene</h3>
+            <h3 className="text-sm font-bold text-white">Contact Quality Guardrails</h3>
           </div>
 
           <div className="space-y-2 text-xs">
             <div className="flex justify-between py-1 border-b border-[#1E293B]">
-              <span className="text-slate-400">Valid syntax contacts:</span>
+              <span className="text-slate-400">Verified contacts:</span>
               <span className="font-semibold text-emerald-400">{metrics?.data_hygiene?.valid_contacts || 0}</span>
             </div>
             <div className="flex justify-between py-1 border-b border-[#1E293B]">
-              <span className="text-slate-400">Syntax invalid:</span>
+              <span className="text-slate-400">Format issues:</span>
               <span className="font-semibold text-rose-400">{metrics?.data_hygiene?.invalid_emails || 0}</span>
             </div>
             <div className="flex justify-between py-1 border-b border-[#1E293B]">
@@ -288,7 +295,7 @@ export const Reports = () => {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Clock className="w-4 h-4 text-purple-400" />
-            <h3 className="text-sm font-bold text-white">Campaign Execution Telemetry Log</h3>
+            <h3 className="text-sm font-bold text-white">Outreach Delivery Log</h3>
           </div>
           <span className="text-xs text-slate-400">Total Entries: {recentLogs.length}</span>
         </div>
@@ -296,7 +303,7 @@ export const Reports = () => {
         <DataTable
           columns={activityColumns}
           data={recentLogs}
-          emptyMessage="No campaign activity recorded yet. Dispatches will appear here."
+          emptyMessage="No outreach activity recorded yet. Dispatches will appear here."
         />
       </div>
     </div>

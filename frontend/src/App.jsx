@@ -53,43 +53,43 @@ const PageLayout = ({ children, systemStatus }) => {
     switch (location.pathname) {
       case '/':
         return { 
-          title: 'Export Outreach Dashboard', 
-          subtitle: `${prodName} · Multi-Product B2B Export Intelligence` 
+          title: 'Sales & Outreach Dashboard', 
+          subtitle: `${prodName} · B2B Export Performance` 
         };
       case '/discover':
         return { 
           title: 'Discover International Buyers', 
-          subtitle: `Live Search Discovery for ${prodName}` 
+          subtitle: `Find verified international buyers for ${prodName}` 
         };
       case '/upload':
         return { 
-          title: 'Import Leads', 
-          subtitle: 'Import external lead datasets for batch qualification' 
+          title: 'Import Buyers', 
+          subtitle: 'Already have a buyer list? Import it here.' 
         };
       case '/classify':
         return { 
-          title: 'AI Lead Qualification', 
-          subtitle: `Gemini semantic evaluation tailored for ${prodName}` 
+          title: 'Buyer Qualification', 
+          subtitle: `AI-assisted commercial fit evaluation for ${prodName}` 
         };
       case '/send':
         return { 
-          title: 'Send Campaign', 
-          subtitle: `Personalized dispatch for ${prodName} via authenticated Gmail SMTP` 
+          title: 'Launch Outreach', 
+          subtitle: `Personalized email outreach for ${prodName}` 
         };
       case '/reports':
         return { 
-          title: 'Campaign Analytics & Reports', 
-          subtitle: 'Audit trail, delivery results, and lead qualification metrics' 
+          title: 'Sales Analytics & Reports', 
+          subtitle: 'Buyer interest, delivery results, and qualification performance' 
         };
       case '/settings':
         return { 
-          title: 'System Configuration', 
-          subtitle: 'Product catalog, outreach controls, and diagnostic health' 
+          title: 'Platform Settings', 
+          subtitle: 'Product catalog, outreach preferences, and account readiness' 
         };
       default:
         return { 
-          title: 'Export Automation', 
-          subtitle: `${prodName} Platform` 
+          title: 'Export Sales Platform', 
+          subtitle: `${prodName}` 
         };
     }
   };
@@ -142,8 +142,8 @@ const AppContent = () => {
     try {
       const res = await apiService.getDashboard();
       setSystemStatus(res.system);
-    } catch (err) {
-      console.error('Failed to load system status:', err);
+    } catch {
+      // Handled quietly without exposing developer logs
     }
   };
 

@@ -4,7 +4,7 @@ import {
   LayoutDashboard, 
   Globe, 
   UploadCloud, 
-  Bot, 
+  Sparkles, 
   Send, 
   BarChart3, 
   Settings as SettingsIcon, 
@@ -16,9 +16,9 @@ export const Sidebar = ({ isOpen, onClose }) => {
   const navItems = [
     { name: 'Dashboard', path: '/', icon: LayoutDashboard },
     { name: 'Discover Buyers', path: '/discover', icon: Globe },
-    { name: 'Import Leads', path: '/upload', icon: UploadCloud },
-    { name: 'AI Classification', path: '/classify', icon: Bot },
-    { name: 'Send Campaign', path: '/send', icon: Send },
+    { name: 'Import Buyers', path: '/upload', icon: UploadCloud },
+    { name: 'Buyer Qualification', path: '/classify', icon: Sparkles },
+    { name: 'Launch Outreach', path: '/send', icon: Send },
     { name: 'Reports', path: '/reports', icon: BarChart3 },
     { name: 'Settings', path: '/settings', icon: SettingsIcon },
   ];
@@ -48,8 +48,8 @@ export const Sidebar = ({ isOpen, onClose }) => {
                 EA
               </div>
               <div>
-                <div className="text-sm font-bold text-[#F8FAFC] tracking-tight">EXPORT AUTO</div>
-                <div className="text-[10px] font-semibold text-purple-400 uppercase tracking-wider">Multi-Product B2B</div>
+                <div className="text-sm font-bold text-[#F8FAFC] tracking-tight">EXPORT SALES</div>
+                <div className="text-[10px] font-semibold text-purple-400 uppercase tracking-wider">B2B Platform</div>
               </div>
             </div>
             <button 
@@ -85,13 +85,13 @@ export const Sidebar = ({ isOpen, onClose }) => {
           </nav>
         </div>
 
-        {/* Minimal Footer */}
+        {/* Minimal Clean Footer */}
         <div className="p-4 border-t border-[#1E293B] text-[11px] text-[#94A3B8] flex items-center justify-between">
           <span className="flex items-center gap-1.5">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
-            <span>Enterprise Engine</span>
+            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+            <span className="font-medium text-slate-300">System Ready</span>
           </span>
-          <span className="font-mono text-[10px] text-slate-500">v2.1</span>
+          <span className="text-[10px] text-slate-500">Commercial</span>
         </div>
       </aside>
     </>

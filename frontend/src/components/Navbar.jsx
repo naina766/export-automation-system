@@ -27,20 +27,20 @@ export const Navbar = ({ title, subtitle, systemStatus, onMenuClick }) => {
     }
     
     const missing = [];
-    if (!searchOk) missing.push('Search API');
-    if (!geminiOk) missing.push('Gemini AI');
-    if (!gmailOk) missing.push('Gmail SMTP');
+    if (!searchOk) missing.push('Buyer Discovery');
+    if (!geminiOk) missing.push('AI Qualification');
+    if (!gmailOk) missing.push('Email Outreach');
 
     if (missing.length === 1) {
       return {
-        label: `${missing[0]} Not Configured`,
+        label: `${missing[0]} Needs Setup`,
         badgeClass: 'bg-amber-500/10 border-amber-500/30 text-amber-300 hover:bg-amber-500/20',
         dotClass: 'bg-amber-400',
       };
     }
 
     return {
-      label: `${missing.length} Configurations Required`,
+      label: 'Attention Required',
       badgeClass: 'bg-amber-500/10 border-amber-500/30 text-amber-300 hover:bg-amber-500/20',
       dotClass: 'bg-amber-400',
     };
@@ -98,17 +98,12 @@ export const Navbar = ({ title, subtitle, systemStatus, onMenuClick }) => {
 
           {productDropdownOpen && (
             <div className="absolute right-0 mt-2 w-72 sm:w-80 rounded-xl bg-[#0B1220] border border-[#1E293B] shadow-2xl p-2 z-50 space-y-1 animate-in fade-in zoom-in-95 duration-150">
-              <div className="px-3 py-2 border-b border-[#1E293B] flex items-center justify-between">
-                <span className="text-[11px] font-bold uppercase tracking-wider text-[#94A3B8] flex items-center gap-1.5">
-                  <Sparkles className="w-3 h-3 text-purple-400" />
-                  <span>Active Export Product</span>
-                </span>
-                <span className="text-[10px] text-purple-400/80 font-mono">
-                  {products.length} Products
+              <div className="px-3 py-2 border-b border-[#1E293B]">
+                <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+                  Target Export Lines
                 </span>
               </div>
-
-              <div className="max-h-60 overflow-y-auto space-y-1 py-1 pr-1 custom-scrollbar">
+              <div className="max-h-60 overflow-y-auto space-y-1 pr-1">
                 {products.map((prod) => {
                   const isSelected = selectedProduct?.id === prod.id;
                   return (
@@ -119,18 +114,18 @@ export const Navbar = ({ title, subtitle, systemStatus, onMenuClick }) => {
                         setSelectedProduct(prod);
                         setProductDropdownOpen(false);
                       }}
-                      className={`w-full text-left px-3 py-2 rounded-lg text-xs transition-all flex items-start justify-between gap-2 ${
-                        isSelected
-                          ? 'bg-purple-600/15 border border-purple-500/30 text-[#F8FAFC]'
-                          : 'hover:bg-slate-800/50 text-[#94A3B8] hover:text-[#F8FAFC] border border-transparent'
+                      className={`w-full text-left p-2.5 rounded-lg flex items-start justify-between gap-2 transition-all ${
+                        isSelected 
+                          ? 'bg-purple-600/15 border border-purple-500/30 text-purple-200' 
+                          : 'hover:bg-slate-800/50 text-[#F8FAFC] border border-transparent'
                       }`}
                     >
-                      <div className="truncate">
-                        <div className="font-semibold flex items-center gap-1.5">
+                      <div className="min-w-0">
+                        <div className="text-xs font-semibold flex items-center gap-1.5">
                           <span className="truncate">{prod.name}</span>
                           {prod.active && (
                             <span className="text-[9px] px-1.5 py-0.2 rounded bg-cyan-500/20 text-cyan-300 font-mono uppercase">
-                              Default
+                              Active
                             </span>
                           )}
                         </div>
@@ -158,7 +153,7 @@ export const Navbar = ({ title, subtitle, systemStatus, onMenuClick }) => {
                   className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg bg-[#111827] hover:bg-purple-950/30 text-purple-300 hover:text-purple-200 text-xs font-semibold border border-[#1E293B] hover:border-purple-500/30 transition-all"
                 >
                   <PlusCircle className="w-3.5 h-3.5" />
-                  <span>+ Manage Products Catalog...</span>
+                  <span>Configure Products Catalog</span>
                 </button>
               </div>
             </div>
@@ -174,7 +169,7 @@ export const Navbar = ({ title, subtitle, systemStatus, onMenuClick }) => {
           >
             <span className={`w-2 h-2 rounded-full ${statusDetails.dotClass} animate-pulse`}></span>
             <span className="hidden sm:inline">{statusDetails.label}</span>
-            <span className="sm:hidden">{allOperational ? 'Operational' : 'Attention'}</span>
+            <span className="sm:hidden">{allOperational ? 'Ready' : 'Attention'}</span>
             <ChevronDown className="w-3.5 h-3.5 opacity-70 ml-0.5" />
           </button>
 
@@ -182,35 +177,35 @@ export const Navbar = ({ title, subtitle, systemStatus, onMenuClick }) => {
             <div className="absolute right-0 mt-2 w-72 rounded-xl bg-[#0B1220] border border-[#1E293B] shadow-2xl p-4 z-50 space-y-3 animate-in fade-in zoom-in-95 duration-150">
               <div className="flex items-center justify-between pb-2.5 border-b border-[#1E293B]">
                 <span className="text-xs font-bold text-[#F8FAFC] flex items-center gap-1.5">
-                  <Activity className="w-3.5 h-3.5 text-cyan-400" />
-                  <span>Infrastructure Diagnostics</span>
+                  <Sparkles className="w-3.5 h-3.5 text-purple-400" />
+                  <span>Outreach Readiness</span>
                 </span>
                 <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${
                   allOperational ? 'bg-emerald-500/20 text-emerald-300' : 'bg-amber-500/20 text-amber-300'
                 }`}>
-                  {allOperational ? 'Operational' : 'Action Required'}
+                  {allOperational ? 'Operational' : 'Attention Required'}
                 </span>
               </div>
 
               <div className="space-y-2.5 text-xs">
                 <div className="flex items-center justify-between py-1 border-b border-slate-800/40 text-slate-300">
-                  <span className="text-[#94A3B8] font-medium">Search Provider</span>
+                  <span className="text-[#94A3B8] font-medium">Buyer Discovery</span>
                   <span className={`flex items-center gap-1 font-semibold ${searchOk ? 'text-emerald-400' : 'text-amber-400'}`}>
-                    <span>{searchOk ? '✓ Connected' : '⚠ Not Configured'}</span>
+                    <span>{searchOk ? 'Ready' : 'Setup Required'}</span>
                   </span>
                 </div>
 
                 <div className="flex items-center justify-between py-1 border-b border-slate-800/40 text-slate-300">
-                  <span className="text-[#94A3B8] font-medium">Gemini AI</span>
+                  <span className="text-[#94A3B8] font-medium">AI Qualification</span>
                   <span className={`flex items-center gap-1 font-semibold ${geminiOk ? 'text-emerald-400' : 'text-amber-400'}`}>
-                    <span>{geminiOk ? '✓ Connected' : '⚠ Not Configured'}</span>
+                    <span>{geminiOk ? 'Ready' : 'Setup Required'}</span>
                   </span>
                 </div>
 
                 <div className="flex items-center justify-between py-1 text-slate-300">
-                  <span className="text-[#94A3B8] font-medium">Gmail SMTP</span>
+                  <span className="text-[#94A3B8] font-medium">Email Outreach</span>
                   <span className={`flex items-center gap-1 font-semibold ${gmailOk ? 'text-emerald-400' : 'text-amber-400'}`}>
-                    <span>{gmailOk ? '✓ Connected' : '⚠ Not Configured'}</span>
+                    <span>{gmailOk ? 'Connected' : 'Setup Required'}</span>
                   </span>
                 </div>
               </div>
@@ -219,10 +214,10 @@ export const Navbar = ({ title, subtitle, systemStatus, onMenuClick }) => {
                 <Link
                   to="/settings"
                   onClick={() => setPopoverOpen(false)}
-                  className="flex items-center justify-center gap-1.5 w-full py-2 rounded-lg bg-[#111827] hover:bg-slate-800/80 text-cyan-400 hover:text-cyan-300 text-xs font-semibold border border-[#1E293B] transition-all"
+                  className="text-xs font-bold text-purple-400 hover:text-purple-300 flex items-center justify-between w-full p-1.5 rounded-lg hover:bg-purple-950/20 transition-all"
                 >
-                  <span>Manage in System Health</span>
-                  <ArrowRight className="w-3 h-3" />
+                  <span>Manage Outreach Settings</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
                 </Link>
               </div>
             </div>

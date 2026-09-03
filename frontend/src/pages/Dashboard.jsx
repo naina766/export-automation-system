@@ -33,6 +33,8 @@ import DataTable from '../components/DataTable';
 import LoadingSpinner from '../components/LoadingSpinner';
 import Notification from '../components/Notification';
 
+import { formatBusinessError } from '../services/errorHandler';
+
 export const Dashboard = () => {
   const navigate = useNavigate();
   const { selectedProduct, products } = useProduct();
@@ -47,7 +49,7 @@ export const Dashboard = () => {
       const res = await apiService.getDashboard(selectedProduct?.id);
       setData(res);
     } catch (err) {
-      setError(err.response?.data?.detail || 'Unable to load dashboard data.');
+      setError(formatBusinessError(err, 'Unable to load dashboard data right now. Please try again.'));
     } finally {
       setLoading(false);
     }
@@ -58,20 +60,20 @@ export const Dashboard = () => {
   }, [selectedProduct?.id]);
 
   if (loading) {
-    return <LoadingSpinner text="Loading dashboard metrics & performance data..." />;
+    return <LoadingSpinner text="Loading sales performance & buyer data..." />;
   }
 
   if (error) {
     return (
-      <div className="p-8 rounded-2xl bg-[#131b2e] border border-rose-500/30 text-center space-y-4 max-w-lg mx-auto mt-12">
+      <div className="p-8 rounded-2xl bg-[#0B1220] border border-rose-500/30 text-center space-y-4 max-w-lg mx-auto mt-12">
         <AlertCircle className="w-10 h-10 text-rose-400 mx-auto" />
-        <h2 className="text-base font-bold text-white">Unable to Load Dashboard</h2>
+        <h2 className="text-base font-bold text-white">Dashboard Temporarily Unavailable</h2>
         <p className="text-xs text-slate-400">{error}</p>
         <button
           onClick={fetchDashboard}
-          className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold transition-all"
+          className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold transition-all shadow-md"
         >
-          Retry Connection
+          Refresh Dashboard
         </button>
       </div>
     );
@@ -82,26 +84,26 @@ export const Dashboard = () => {
   const segments = metrics.buyer_segments || [];
   const recentLogs = metrics.recent_activity || [];
 
-  // Production campaign stats (strictly separate from test SMTP sends)
+  // Production outreach stats
   const prodAttempts = metrics.emails_attempted || 0;
   const prodSends = metrics.successful_sends || 0;
   const testSends = metrics.test_sends || 0;
 
-  // Format success rate gracefully (Requirement 4)
+  // Format success rate gracefully
   const hasCampaignAttempts = prodAttempts > 0;
   const successRateDisplay = hasCampaignAttempts && metrics.success_rate !== null ? `${metrics.success_rate}%` : '—';
-  const successRateSubtext = hasCampaignAttempts ? `${prodSends} sent / ${prodAttempts} attempted` : 'No campaign attempts yet';
+  const successRateSubtext = hasCampaignAttempts ? `${prodSends} sent / ${prodAttempts} attempted` : 'No outreach sent yet';
 
-  // Format Emails Sent subtext (Requirement 3)
+  // Format Emails Sent subtext
   const emailsSentSubtext = testSends > 0 
-    ? `${testSends} test dispatch${testSends > 1 ? 'es' : ''} verified`
-    : 'Dispatched via Gmail SMTP';
+    ? `${testSends} test email${testSends > 1 ? 's' : ''} verified`
+    : 'Direct email outreach';
 
-  // Data hygiene note (Requirement 7)
+  // Data hygiene note
   const invalidTotal = (hygiene.invalid_emails || 0) + (hygiene.missing_emails || 0);
   const hygieneStatusNote = invalidTotal === 0 
-    ? 'All contacts are ready for outreach.' 
-    : 'Review invalid contacts before launching outreach.';
+    ? 'All buyer contacts are verified and ready for outreach.' 
+    : 'Review excluded contacts before launching outreach.';
 
   const activityColumns = [
     { 
@@ -150,7 +152,7 @@ export const Dashboard = () => {
       accessor: 'campaign',
       render: (row) => (
         <span className="text-xs text-slate-300">
-          {row.campaign || (row.is_test ? 'SMTP Test' : 'Export Outreach')}
+          {row.campaign || (row.is_test ? 'Test Outreach' : 'Export Outreach')}
         </span>
       ) 
     }
@@ -202,23 +204,23 @@ export const Dashboard = () => {
       {/* Core Executive KPI Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
         <StatCard
-          title="Total Leads"
+          title="Total Buyers"
           value={metrics.total_buyers_discovered ?? metrics.total_leads ?? 0}
-          subtext="Discovered from live search"
+          subtext="Discovered prospects"
           icon={Search}
           color="blue"
         />
         <StatCard
           title="Qualified Buyers"
           value={metrics.ai_qualified_buyers ?? metrics.qualified_buyers ?? metrics.business_leads ?? 0}
-          subtext="Wholesale & studio targets"
+          subtext="Wholesale & commercial targets"
           icon={Building2}
           color="purple"
         />
         <StatCard
           title="Valid Contacts"
           value={metrics.valid_contact_emails ?? metrics.valid_emails ?? 0}
-          subtext="Verified syntax & domain"
+          subtext="Verified email addresses"
           icon={CheckCircle}
           color="emerald"
         />
@@ -230,16 +232,16 @@ export const Dashboard = () => {
           color="amber"
         />
         <StatCard
-          title="Success Rate"
+          title="Delivery Rate"
           value={successRateDisplay}
           subtext={successRateSubtext}
           icon={Percent}
           color="cyan"
         />
         <StatCard
-          title="Campaigns"
+          title="Outreach Runs"
           value={metrics.campaigns_count || 0}
-          subtext="Active campaigns"
+          subtext="Completed dispatches"
           icon={BarChart3}
           color="teal"
         />
@@ -349,18 +351,18 @@ export const Dashboard = () => {
         </div>
       </div>
 
-      {/* Recent Campaign Activity Table (Requirement 11) */}
-      <div className="bg-[#131b2e] border border-[#222f4c] rounded-xl p-5 shadow-sm space-y-3">
-        <div className="flex items-center justify-between pb-2 border-b border-[#222f4c]/60">
+      {/* Recent Campaign Activity Table */}
+      <div className="bg-[#0B1220] border border-[#1E293B] rounded-xl p-5 shadow-sm space-y-3">
+        <div className="flex items-center justify-between pb-2 border-b border-[#1E293B]">
           <div>
-            <h3 className="text-xs font-bold text-white uppercase tracking-wider">Recent Campaign Activity</h3>
-            <p className="text-[11px] text-slate-400 mt-0.5">Real delivery & verification records from sent_log.csv</p>
+            <h3 className="text-xs font-bold text-white uppercase tracking-wider">Recent Outreach Activity</h3>
+            <p className="text-[11px] text-slate-400 mt-0.5">Audit log of dispatched buyer outreach.</p>
           </div>
           <Link
             to="/reports"
-            className="flex items-center gap-1.5 text-xs font-semibold text-blue-400 hover:text-blue-300 transition-colors"
+            className="flex items-center gap-1.5 text-xs font-semibold text-purple-400 hover:text-purple-300 transition-colors"
           >
-            <span>Full Audit Log</span>
+            <span>Full Outreach Report</span>
             <ArrowRight className="w-3.5 h-3.5" />
           </Link>
         </div>
@@ -369,21 +371,21 @@ export const Dashboard = () => {
           <DataTable
             columns={activityColumns}
             data={recentLogs}
-            emptyMessage="No campaign activity recorded yet."
+            emptyMessage="No outreach activity recorded yet."
           />
         ) : (
-          <div className="p-6 rounded-xl bg-[#0b0f19] border border-[#222f4c] text-center space-y-2">
+          <div className="p-6 rounded-xl bg-[#050816] border border-[#1E293B] text-center space-y-2">
             <Send className="w-7 h-7 text-slate-500 mx-auto" />
-            <div className="text-xs font-bold text-white">No Campaign Activity Yet</div>
+            <div className="text-xs font-bold text-white">No Outreach Dispatches Yet</div>
             <p className="text-[11px] text-slate-400 max-w-sm mx-auto">
-              Your dispatched outreach emails will appear here with live timestamps and delivery statuses.
+              Your dispatched buyer outreach emails will appear here with timestamps and delivery outcomes.
             </p>
             <button
               onClick={() => navigate('/send')}
-              className="px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-md transition-all inline-flex items-center gap-1.5 mt-2"
+              className="px-3.5 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold shadow-md transition-all inline-flex items-center gap-1.5 mt-2"
             >
               <Send className="w-3.5 h-3.5" />
-              <span>Create Campaign</span>
+              <span>Launch Outreach</span>
             </button>
           </div>
         )}
@@ -391,102 +393,102 @@ export const Dashboard = () => {
 
       {/* Quick Workflow + Export Catalog Bottom Section */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
-        {/* Quick Actions (Requirement 13) */}
-        <div className="lg:col-span-8 bg-[#131b2e] border border-[#222f4c] rounded-xl p-5 shadow-sm space-y-3">
-          <div className="pb-1 border-b border-[#222f4c]/60">
-            <h3 className="text-xs font-bold text-white uppercase tracking-wider">Outreach Workflow</h3>
-            <p className="text-[11px] text-slate-400">Guided chronological progression from discovery to reporting.</p>
+        {/* Quick Actions */}
+        <div className="lg:col-span-8 bg-[#0B1220] border border-[#1E293B] rounded-xl p-5 shadow-sm space-y-3">
+          <div className="pb-1 border-b border-[#1E293B]">
+            <h3 className="text-xs font-bold text-white uppercase tracking-wider">Sales Pipeline Progression</h3>
+            <p className="text-[11px] text-slate-400">Step-by-step export workflow from discovery to outreach analytics.</p>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-2.5">
             <Link
               to="/discover"
-              className="flex flex-col justify-between p-3 rounded-lg bg-[#0b0f19] border border-[#222f4c] hover:border-blue-500/50 hover:bg-blue-500/5 transition-all group"
+              className="flex flex-col justify-between p-3 rounded-lg bg-[#050816] border border-[#1E293B] hover:border-purple-500/50 hover:bg-purple-500/5 transition-all group"
             >
               <div className="flex items-center gap-2 mb-2">
-                <div className="p-1.5 rounded bg-blue-500/10 text-blue-400 group-hover:bg-blue-500 group-hover:text-white transition-colors">
+                <div className="p-1.5 rounded bg-purple-500/10 text-purple-400 group-hover:bg-purple-600 group-hover:text-white transition-colors">
                   <Globe className="w-3.5 h-3.5" />
                 </div>
                 <span className="text-xs font-bold text-white">1. Discover</span>
               </div>
               <div className="text-[10px] text-slate-400 flex items-center justify-between">
                 <span>Find buyers</span>
-                <ArrowRight className="w-3 h-3 text-slate-500 group-hover:text-blue-400 group-hover:translate-x-0.5 transition-all" />
+                <ArrowRight className="w-3 h-3 text-slate-500 group-hover:text-purple-400 group-hover:translate-x-0.5 transition-all" />
               </div>
             </Link>
 
             <Link
               to="/upload"
-              className="flex flex-col justify-between p-3 rounded-lg bg-[#0b0f19] border border-[#222f4c] hover:border-blue-500/50 hover:bg-blue-500/5 transition-all group"
+              className="flex flex-col justify-between p-3 rounded-lg bg-[#050816] border border-[#1E293B] hover:border-purple-500/50 hover:bg-purple-500/5 transition-all group"
             >
               <div className="flex items-center gap-2 mb-2">
-                <div className="p-1.5 rounded bg-blue-500/10 text-blue-400 group-hover:bg-blue-500 group-hover:text-white transition-colors">
+                <div className="p-1.5 rounded bg-purple-500/10 text-purple-400 group-hover:bg-purple-600 group-hover:text-white transition-colors">
                   <UploadCloud className="w-3.5 h-3.5" />
                 </div>
-                <span className="text-xs font-bold text-white">2. Upload</span>
+                <span className="text-xs font-bold text-white">2. Import</span>
               </div>
               <div className="text-[10px] text-slate-400 flex items-center justify-between">
-                <span>Import CSV</span>
-                <ArrowRight className="w-3 h-3 text-slate-500 group-hover:text-blue-400 group-hover:translate-x-0.5 transition-all" />
+                <span>Buyer lists</span>
+                <ArrowRight className="w-3 h-3 text-slate-500 group-hover:text-purple-400 group-hover:translate-x-0.5 transition-all" />
               </div>
             </Link>
 
             <Link
               to="/classify"
-              className="flex flex-col justify-between p-3 rounded-lg bg-[#0b0f19] border border-[#222f4c] hover:border-purple-500/50 hover:bg-purple-500/5 transition-all group"
+              className="flex flex-col justify-between p-3 rounded-lg bg-[#050816] border border-[#1E293B] hover:border-purple-500/50 hover:bg-purple-500/5 transition-all group"
             >
               <div className="flex items-center gap-2 mb-2">
-                <div className="p-1.5 rounded bg-purple-500/10 text-purple-400 group-hover:bg-purple-500 group-hover:text-white transition-colors">
+                <div className="p-1.5 rounded bg-purple-500/10 text-purple-400 group-hover:bg-purple-600 group-hover:text-white transition-colors">
                   <Sparkles className="w-3.5 h-3.5" />
                 </div>
-                <span className="text-xs font-bold text-white">3. Classify</span>
+                <span className="text-xs font-bold text-white">3. Qualify</span>
               </div>
               <div className="text-[10px] text-slate-400 flex items-center justify-between">
-                <span>AI segment</span>
+                <span>AI fit rating</span>
                 <ArrowRight className="w-3 h-3 text-slate-500 group-hover:text-purple-400 group-hover:translate-x-0.5 transition-all" />
               </div>
             </Link>
 
             <Link
               to="/send"
-              className="flex flex-col justify-between p-3 rounded-lg bg-[#0b0f19] border border-[#222f4c] hover:border-emerald-500/50 hover:bg-emerald-500/5 transition-all group"
+              className="flex flex-col justify-between p-3 rounded-lg bg-[#050816] border border-[#1E293B] hover:border-cyan-500/50 hover:bg-cyan-500/5 transition-all group"
             >
               <div className="flex items-center gap-2 mb-2">
-                <div className="p-1.5 rounded bg-emerald-500/10 text-emerald-400 group-hover:bg-emerald-500 group-hover:text-white transition-colors">
+                <div className="p-1.5 rounded bg-cyan-500/10 text-cyan-400 group-hover:bg-cyan-600 group-hover:text-white transition-colors">
                   <Send className="w-3.5 h-3.5" />
                 </div>
-                <span className="text-xs font-bold text-white">4. Send</span>
+                <span className="text-xs font-bold text-white">4. Outreach</span>
               </div>
               <div className="text-[10px] text-slate-400 flex items-center justify-between">
-                <span>Gmail outreach</span>
-                <ArrowRight className="w-3 h-3 text-slate-500 group-hover:text-emerald-400 group-hover:translate-x-0.5 transition-all" />
+                <span>Launch emails</span>
+                <ArrowRight className="w-3 h-3 text-slate-500 group-hover:text-cyan-400 group-hover:translate-x-0.5 transition-all" />
               </div>
             </Link>
 
             <Link
               to="/reports"
-              className="flex flex-col justify-between p-3 rounded-lg bg-[#0b0f19] border border-[#222f4c] hover:border-teal-500/50 hover:bg-teal-500/5 transition-all group"
+              className="flex flex-col justify-between p-3 rounded-lg bg-[#050816] border border-[#1E293B] hover:border-purple-500/50 hover:bg-purple-500/5 transition-all group"
             >
               <div className="flex items-center gap-2 mb-2">
-                <div className="p-1.5 rounded bg-teal-500/10 text-teal-400 group-hover:bg-teal-500 group-hover:text-white transition-colors">
+                <div className="p-1.5 rounded bg-purple-500/10 text-purple-400 group-hover:bg-purple-600 group-hover:text-white transition-colors">
                   <BarChart3 className="w-3.5 h-3.5" />
                 </div>
                 <span className="text-xs font-bold text-white">5. Reports</span>
               </div>
               <div className="text-[10px] text-slate-400 flex items-center justify-between">
-                <span>View results</span>
-                <ArrowRight className="w-3 h-3 text-slate-500 group-hover:text-teal-400 group-hover:translate-x-0.5 transition-all" />
+                <span>Sales results</span>
+                <ArrowRight className="w-3 h-3 text-slate-500 group-hover:text-purple-400 group-hover:translate-x-0.5 transition-all" />
               </div>
             </Link>
           </div>
         </div>
 
-        {/* Export Product Catalog (Requirement 12) */}
-        <div className="lg:col-span-4 bg-[#131b2e] border border-[#222f4c] rounded-xl p-5 shadow-sm space-y-3">
-          <div className="flex items-center justify-between pb-1 border-b border-[#222f4c]/60">
+        {/* Export Product Catalog Presentation */}
+        <div className="lg:col-span-4 bg-[#0B1220] border border-[#1E293B] rounded-xl p-5 shadow-sm space-y-3">
+          <div className="flex items-center justify-between pb-1 border-b border-[#1E293B]">
             <div className="flex items-center gap-2">
-              <FileText className="w-4 h-4 text-blue-400" />
-              <h3 className="text-xs font-bold text-white uppercase tracking-wider">Export Product Catalog</h3>
+              <FileText className="w-4 h-4 text-purple-400" />
+              <h3 className="text-xs font-bold text-white uppercase tracking-wider">Product Catalog</h3>
             </div>
             <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
               PDF Ready
@@ -494,7 +496,7 @@ export const Dashboard = () => {
           </div>
 
           <p className="text-[11px] text-slate-400 leading-relaxed">
-            Himalayan Singing Bowls wholesale presentation attached automatically to outreach campaigns.
+            Wholesale export presentation attached automatically to qualified outreach campaigns.
           </p>
 
           <div className="flex items-center gap-2 pt-1">
@@ -502,15 +504,15 @@ export const Dashboard = () => {
               href={apiService.getCatalogUrl()}
               target="_blank"
               rel="noopener noreferrer"
-              className="flex-1 py-1.5 px-3 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold transition-all text-center flex items-center justify-center gap-1.5 shadow-sm"
+              className="flex-1 py-1.5 px-3 rounded-lg bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold transition-all text-center flex items-center justify-center gap-1.5 shadow-sm"
             >
               <span>View Catalog</span>
               <ExternalLink className="w-3.5 h-3.5" />
             </a>
             <a
               href={apiService.getCatalogUrl()}
-              download="Himalayan_Singing_Bowls_Export_Catalog.pdf"
-              className="py-1.5 px-3 rounded-lg bg-[#0b0f19] hover:bg-slate-800 text-slate-300 border border-[#222f4c] text-xs font-bold transition-all text-center flex items-center justify-center gap-1.5"
+              download="Product_Export_Catalog.pdf"
+              className="py-1.5 px-3 rounded-lg bg-[#050816] hover:bg-slate-800 text-slate-300 border border-[#1E293B] text-xs font-bold transition-all text-center flex items-center justify-center gap-1.5"
             >
               <Download className="w-3.5 h-3.5" />
               <span>Download</span>
