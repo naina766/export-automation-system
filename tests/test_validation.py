@@ -7,9 +7,13 @@ import pytest
 from validation.email_validator import EmailValidator, validate_email_address
 
 def test_validate_single_email():
-    res = validate_email_address("SARAH@EXAMPLE.COM")
+    res = validate_email_address("BUYER@HIMALAYANCRAFTS.COM")
     assert res["valid"] is True
-    assert res["normalized_email"] == "sarah@example.com"
+    assert res["normalized_email"] == "buyer@himalayancrafts.com"
+
+    # Verify placeholder/test domains are rejected
+    assert validate_email_address("test@example.com")["valid"] is False
+    assert validate_email_address("test@reserved.example")["valid"] is False
 
     res = validate_email_address("invalid-email-address")
     assert res["valid"] is False
@@ -21,8 +25,8 @@ def test_process_and_deduplicate():
     sample_data = {
         "name": ["Alice", "Alice Dup", "Bob", "Empty Email"],
         "company": ["Zen Imports", "Zen Imports", "Global Crafts", "No Email Corp"],
-        "email": ["alice@example.com", "ALICE@EXAMPLE.COM", "invalid-email", ""],
-        "website": ["https://zen.example", "https://zen.example", "", ""],
+        "email": ["alice@buyerimports.com", "ALICE@BUYERIMPORTS.COM", "invalid-email", ""],
+        "website": ["https://zenimports.com", "https://zenimports.com", "", ""],
         "country": ["USA", "USA", "UK", "Germany"],
         "source": ["Google", "Google", "LinkedIn", "Directory"]
     }

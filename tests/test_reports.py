@@ -19,3 +19,13 @@ def test_report_csv_generation():
     assert "EXPORT AUTOMATION SYSTEM" in csv_text
     assert "KPI SUMMARY" in csv_text
     assert "Delivery Success Rate" in csv_text
+
+def test_test_email_accounting_separation():
+    metrics = ReportGenerator.get_campaign_metrics()
+    assert "test_sends" in metrics
+    assert "pipeline_stages" in metrics
+    # Production outreach equals production successful sends
+    assert metrics["pipeline_stages"]["outreach"] == metrics["successful_sends"]
+    if metrics["emails_attempted"] == 0:
+        assert metrics["success_rate"] is None
+        assert metrics["campaigns_count"] == 0

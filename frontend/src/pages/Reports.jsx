@@ -1,24 +1,30 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { 
   BarChart3, 
   Download, 
-  Users, 
+  Globe, 
   CheckCircle2, 
   Building2, 
   Send, 
   Percent, 
   AlertCircle,
   FileSpreadsheet,
-  PieChart
+  PieChart,
+  Layers,
+  Clock,
+  Search,
+  XCircle,
+  TrendingUp
 } from 'lucide-react';
 import apiService from '../services/api';
-import StatCard from '../components/StatCard';
 import StatusBadge from '../components/StatusBadge';
 import DataTable from '../components/DataTable';
 import LoadingSpinner from '../components/LoadingSpinner';
 import Notification from '../components/Notification';
 
 export const Reports = () => {
+  const navigate = useNavigate();
   const [metrics, setMetrics] = useState(null);
   const [loading, setLoading] = useState(true);
   const [downloading, setDownloading] = useState(false);
@@ -58,7 +64,7 @@ export const Reports = () => {
     {
       header: 'Timestamp',
       accessor: 'timestamp',
-      render: (row) => <span className="text-xs text-slate-400 font-mono">{row.timestamp}</span>,
+      render: (row) => <span className="text-xs text-[#94A3B8] font-mono">{row.timestamp}</span>,
     },
     {
       header: 'Buyer Name',
@@ -81,9 +87,9 @@ export const Reports = () => {
       render: (row) => <StatusBadge status={row.status} />,
     },
     {
-      header: 'Mode',
+      header: 'Transport',
       accessor: 'mode',
-      render: (row) => <span className="text-xs font-mono text-slate-400">{row.mode}</span>,
+      render: (row) => <span className="text-xs font-mono text-slate-400">Gmail SMTP</span>,
     },
     {
       header: 'Error / Details',
@@ -92,10 +98,19 @@ export const Reports = () => {
     },
   ];
 
-  const total = metrics.total_leads || 1;
-  const bizPct = Math.round(((metrics.business_leads || 0) / total) * 100);
-  const indPct = Math.round(((metrics.individual_leads || 0) / total) * 100);
-  const valPct = Math.round(((metrics.valid_emails || 0) / total) * 100);
+  const total = metrics?.total_leads || 0;
+  const validContacts = metrics?.valid_emails || 0;
+  const qualified = metrics?.business_leads || 0;
+  const emailsSent = metrics?.successful_sends || 0;
+  const failedSends = metrics?.failed_sends || 0;
+  const successRate = metrics?.success_rate;
+  const recentLogs = metrics?.recent_activity || [];
+
+  const bizPct = total > 0 ? Math.round((qualified / total) * 100) : 0;
+  const indPct = total > 0 ? 100 - bizPct : 0;
+  const valPct = total > 0 ? Math.round((validContacts / total) * 100) : 0;
+
+  const hasAnyData = total > 0 || recentLogs.length > 0;
 
   return (
     <div className="space-y-6">
@@ -106,107 +121,167 @@ export const Reports = () => {
       />
 
       {/* Header & Download Action */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-[#131b2e] border border-[#222f4c] rounded-xl p-6 shadow-sm">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-[#0F172A] border border-[rgba(148,163,184,0.12)] rounded-2xl p-6 shadow-xl">
         <div>
-          <h2 className="text-base font-bold text-white mb-1">📈 Export Outreach Performance Analytics</h2>
-          <p className="text-xs text-slate-400">Complete audit trail and delivery KPI analysis.</p>
+          <h1 className="text-base font-bold text-[#F8FAFC] mb-1">Campaign Analytics & Performance Reports</h1>
+          <p className="text-xs text-[#94A3B8]">Complete audit trail, delivery telemetry, and conversion analytics.</p>
         </div>
         <button
           onClick={handleDownload}
-          disabled={downloading}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold transition-all shadow-md disabled:opacity-50"
+          disabled={downloading || !hasAnyData}
+          className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#3B82F6] hover:bg-[#60A5FA] text-white text-xs font-bold transition-all shadow-md shadow-blue-500/20 disabled:opacity-40 active:scale-95"
         >
           <Download className="w-4 h-4" />
-          <span>{downloading ? 'Downloading...' : 'Download Full CSV Report'}</span>
+          <span>{downloading ? 'Downloading...' : 'Export Full CSV Report'}</span>
         </button>
       </div>
 
       {/* KPI Cards Grid */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-        <div className="p-4 rounded-xl bg-[#131b2e] border border-[#222f4c]">
-          <div className="text-xs text-slate-400">Total Leads</div>
-          <div className="text-2xl font-bold text-blue-400 mt-1">{metrics.total_leads || 0}</div>
-          <div className="text-[10px] text-slate-500 mt-1">Ingested pool</div>
+        <div className="p-4 rounded-xl bg-[#0F172A] border border-[rgba(148,163,184,0.12)]">
+          <div className="text-xs text-[#94A3B8]">Total Leads</div>
+          <div className="text-2xl font-bold text-blue-400 mt-1">{total}</div>
+          <div className="text-[10px] text-slate-500 mt-1">Discovered pool</div>
         </div>
 
-        <div className="p-4 rounded-xl bg-[#131b2e] border border-[#222f4c]">
-          <div className="text-xs text-slate-400">Valid Emails</div>
-          <div className="text-2xl font-bold text-emerald-400 mt-1">{metrics.valid_emails || 0}</div>
-          <div className="text-[10px] text-slate-500 mt-1">{valPct}% syntax valid</div>
+        <div className="p-4 rounded-xl bg-[#0F172A] border border-[rgba(148,163,184,0.12)]">
+          <div className="text-xs text-[#94A3B8]">Qualified</div>
+          <div className="text-2xl font-bold text-purple-400 mt-1">{qualified}</div>
+          <div className="text-[10px] text-slate-500 mt-1">Commercial B2B</div>
         </div>
 
-        <div className="p-4 rounded-xl bg-[#131b2e] border border-[#222f4c]">
-          <div className="text-xs text-slate-400">B2B Businesses</div>
-          <div className="text-2xl font-bold text-purple-400 mt-1">{metrics.business_leads || 0}</div>
-          <div className="text-[10px] text-slate-500 mt-1">{bizPct}% segmented</div>
+        <div className="p-4 rounded-xl bg-[#0F172A] border border-[rgba(148,163,184,0.12)]">
+          <div className="text-xs text-[#94A3B8]">Valid Contacts</div>
+          <div className="text-2xl font-bold text-emerald-400 mt-1">{validContacts}</div>
+          <div className="text-[10px] text-slate-500 mt-1">{valPct}% verified format</div>
         </div>
 
-        <div className="p-4 rounded-xl bg-[#131b2e] border border-[#222f4c]">
-          <div className="text-xs text-slate-400">Successful Sends</div>
-          <div className="text-2xl font-bold text-green-400 mt-1">{metrics.successful_sends || 0}</div>
-          <div className="text-[10px] text-slate-500 mt-1">Live & Demo Sent</div>
+        <div className="p-4 rounded-xl bg-[#0F172A] border border-[rgba(148,163,184,0.12)]">
+          <div className="text-xs text-[#94A3B8]">Emails Sent</div>
+          <div className="text-2xl font-bold text-green-400 mt-1">{emailsSent}</div>
+          <div className="text-[10px] text-slate-500 mt-1">Gmail SMTP Dispatched</div>
         </div>
 
-        <div className="p-4 rounded-xl bg-[#131b2e] border border-[#222f4c]">
-          <div className="text-xs text-slate-400">Duplicates Skipped</div>
-          <div className="text-2xl font-bold text-amber-400 mt-1">{metrics.skipped_leads || 0}</div>
-          <div className="text-[10px] text-slate-500 mt-1">Deduplication guard</div>
+        <div className="p-4 rounded-xl bg-[#0F172A] border border-[rgba(148,163,184,0.12)]">
+          <div className="text-xs text-[#94A3B8]">Failed</div>
+          <div className="text-2xl font-bold text-rose-400 mt-1">{failedSends}</div>
+          <div className="text-[10px] text-slate-500 mt-1">Delivery errors</div>
         </div>
 
-        <div className="p-4 rounded-xl bg-[#131b2e] border border-[#222f4c]">
-          <div className="text-xs text-slate-400">Success Rate</div>
-          <div className="text-2xl font-bold text-cyan-400 mt-1">{metrics.success_rate || 0}%</div>
-          <div className="text-[10px] text-slate-500 mt-1">Delivered / Attempted</div>
-        </div>
-      </div>
-
-      {/* Visual Composition Bars */}
-      <div className="bg-[#131b2e] border border-[#222f4c] rounded-xl p-6 shadow-sm space-y-4">
-        <h3 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
-          <PieChart className="w-4 h-4 text-blue-400" />
-          <span>Lead Segmentation & Quality Composition</span>
-        </h3>
-
-        <div className="space-y-3 text-xs">
-          <div>
-            <div className="flex justify-between text-slate-300 mb-1">
-              <span>Audience Segmentation (Business vs Individual)</span>
-              <span className="font-bold text-white">{bizPct}% Business / {indPct}% Individual</span>
-            </div>
-            <div className="h-2.5 w-full bg-[#0b0f19] rounded-full overflow-hidden flex border border-[#222f4c]">
-              <div style={{ width: `${bizPct}%` }} className="bg-emerald-500 h-full" title="Business" />
-              <div style={{ width: `${indPct}%` }} className="bg-purple-500 h-full" title="Individual" />
-            </div>
+        <div className="p-4 rounded-xl bg-[#0F172A] border border-[rgba(148,163,184,0.12)]">
+          <div className="text-xs text-[#94A3B8]">Success Rate</div>
+          <div className="text-2xl font-bold text-cyan-400 mt-1">
+            {successRate !== null && successRate !== undefined ? `${successRate}%` : '—'}
           </div>
-
-          <div>
-            <div className="flex justify-between text-slate-300 mb-1">
-              <span>Email Validity Ratio</span>
-              <span className="font-bold text-emerald-400">{valPct}% Verified Valid</span>
-            </div>
-            <div className="h-2.5 w-full bg-[#0b0f19] rounded-full overflow-hidden flex border border-[#222f4c]">
-              <div style={{ width: `${valPct}%` }} className="bg-blue-500 h-full" />
-              <div style={{ width: `${100 - valPct}%` }} className="bg-rose-500/80 h-full" />
-            </div>
+          <div className="text-[10px] text-slate-500 mt-1">
+            {successRate !== null && successRate !== undefined ? 'Delivery Success' : 'No sends recorded'}
           </div>
         </div>
       </div>
 
-      {/* Audit Log Table */}
-      <div className="bg-[#131b2e] border border-[#222f4c] rounded-xl p-6 shadow-sm">
-        <div className="flex items-center justify-between mb-4">
+      {!hasAnyData ? (
+        /* Compact Empty State */
+        <div className="p-10 rounded-2xl bg-[#0F172A] border border-[rgba(148,163,184,0.12)] text-center space-y-3 max-w-md mx-auto shadow-xl">
+          <BarChart3 className="w-8 h-8 text-blue-400/60 mx-auto" />
           <div>
-            <h2 className="text-base font-bold text-white">📜 Complete Outreach Activity Log (data/sent_log.csv)</h2>
-            <p className="text-xs text-slate-400">{metrics.recent_activity?.length || 0} total activity records</p>
+            <h2 className="text-sm font-bold text-[#F8FAFC]">No campaign data yet</h2>
+            <p className="text-xs text-[#94A3B8] mt-1 leading-relaxed">
+              Run your first buyer discovery and outreach campaign to start generating performance analytics.
+            </p>
           </div>
+          <button
+            type="button"
+            onClick={() => navigate('/discover')}
+            className="px-4 py-2 rounded-xl bg-[#3B82F6] hover:bg-[#60A5FA] text-white text-xs font-bold shadow-md transition-all inline-flex items-center gap-2 active:scale-95"
+          >
+            <Search className="w-3.5 h-3.5" />
+            <span>Discover Buyers</span>
+          </button>
         </div>
+      ) : (
+        <>
+          {/* Visual Analytics Cards */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Audience Composition & Validation Distribution */}
+            <div className="bg-[#0F172A] border border-[rgba(148,163,184,0.12)] rounded-2xl p-6 shadow-xl space-y-5">
+              <h3 className="text-xs font-bold text-[#F8FAFC] uppercase tracking-wider flex items-center gap-2">
+                <PieChart className="w-4 h-4 text-blue-400" />
+                <span>Lead Composition & Quality</span>
+              </h3>
 
-        <DataTable
-          columns={activityColumns}
-          data={metrics.recent_activity || []}
-          emptyMessage="No activity records logged yet. Dispatch a campaign from Send Campaign."
-        />
-      </div>
+              <div className="space-y-4 text-xs">
+                <div>
+                  <div className="flex justify-between text-slate-300 mb-1.5">
+                    <span className="text-[#94A3B8]">B2B Wholesale vs Individual</span>
+                    <span className="font-bold text-[#F8FAFC]">{bizPct}% B2B / {indPct}% Retail</span>
+                  </div>
+                  <div className="h-2.5 w-full bg-[#080D1D] rounded-full overflow-hidden flex border border-[rgba(148,163,184,0.12)]">
+                    <div style={{ width: `${bizPct}%` }} className="bg-emerald-500 h-full" title="B2B Qualified" />
+                    <div style={{ width: `${indPct}%` }} className="bg-purple-500 h-full" title="Individual" />
+                  </div>
+                </div>
+
+                <div>
+                  <div className="flex justify-between text-slate-300 mb-1.5">
+                    <span className="text-[#94A3B8]">Email Syntax & Domain Verification</span>
+                    <span className="font-bold text-emerald-400">{valPct}% Verified Format</span>
+                  </div>
+                  <div className="h-2.5 w-full bg-[#080D1D] rounded-full overflow-hidden flex border border-[rgba(148,163,184,0.12)]">
+                    <div style={{ width: `${valPct}%` }} className="bg-blue-500 h-full" />
+                    <div style={{ width: `${100 - valPct}%` }} className="bg-rose-500/80 h-full" />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Email Delivery Results Breakdown */}
+            <div className="bg-[#0F172A] border border-[rgba(148,163,184,0.12)] rounded-2xl p-6 shadow-xl space-y-5">
+              <h3 className="text-xs font-bold text-[#F8FAFC] uppercase tracking-wider flex items-center gap-2">
+                <TrendingUp className="w-4 h-4 text-emerald-400" />
+                <span>Email Delivery Telemetry</span>
+              </h3>
+
+              <div className="grid grid-cols-3 gap-3 text-center">
+                <div className="p-3 rounded-xl bg-[#080D1D] border border-[rgba(148,163,184,0.12)]">
+                  <div className="text-[10px] text-[#94A3B8] uppercase">Attempted</div>
+                  <div className="text-lg font-bold text-white mt-1">{emailsSent + failedSends}</div>
+                </div>
+                <div className="p-3 rounded-xl bg-[#080D1D] border border-[rgba(148,163,184,0.12)]">
+                  <div className="text-[10px] text-[#94A3B8] uppercase">Delivered</div>
+                  <div className="text-lg font-bold text-emerald-400 mt-1">{emailsSent}</div>
+                </div>
+                <div className="p-3 rounded-xl bg-[#080D1D] border border-[rgba(148,163,184,0.12)]">
+                  <div className="text-[10px] text-[#94A3B8] uppercase">Failed</div>
+                  <div className="text-lg font-bold text-rose-400 mt-1">{failedSends}</div>
+                </div>
+              </div>
+
+              <div className="text-[11px] text-[#94A3B8] flex items-center justify-between border-t border-[rgba(148,163,184,0.12)] pt-3">
+                <span>Transport Protocol: <b>Gmail SMTP (STARTTLS 587)</b></span>
+                <span className="text-emerald-400 font-semibold">Active Deduplication Guard</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Audit Log Table */}
+          <div className="bg-[#0F172A] border border-[rgba(148,163,184,0.12)] rounded-2xl p-6 shadow-xl space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-[rgba(148,163,184,0.12)]">
+              <div>
+                <h2 className="text-sm font-bold text-[#F8FAFC]">Complete Outreach Activity Log (sent_log.csv)</h2>
+                <p className="text-[11px] text-[#94A3B8] mt-0.5">{recentLogs.length} total dispatch records</p>
+              </div>
+            </div>
+
+            <div className="overflow-x-auto">
+              <DataTable
+                columns={activityColumns}
+                data={recentLogs}
+                emptyMessage="No activity records logged yet."
+              />
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 };

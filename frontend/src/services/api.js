@@ -29,6 +29,11 @@ export const apiService = {
     return res.data;
   },
 
+  getInvalidLeads: async () => {
+    const res = await apiClient.get('/leads/invalid');
+    return res.data;
+  },
+
   // Upload CSV
   uploadCSV: async (file) => {
     const formData = new FormData();
@@ -38,12 +43,6 @@ export const apiService = {
         'Content-Type': 'multipart/form-data',
       },
     });
-    return res.data;
-  },
-
-  // Load Demo Data
-  loadDemoData: async () => {
-    const res = await apiClient.post('/load-demo');
     return res.data;
   },
 
@@ -100,7 +99,10 @@ export const apiService = {
     link.remove();
   },
 
-  // Settings
+  // Catalog URL for in-browser PDF preview / download
+  getCatalogUrl: () => `${API_BASE_URL}/catalog`,
+
+  // Settings & SMTP Diagnostics
   getSettings: async () => {
     const res = await apiClient.get('/settings');
     return res.data;
@@ -111,9 +113,24 @@ export const apiService = {
     return res.data;
   },
 
-  // Search Demo
-  searchDemo: async (keyword = 'Singing Bowls', limit = 5) => {
-    const res = await apiClient.get(`/search/demo?keyword=${encodeURIComponent(keyword)}&limit=${limit}`);
+  testSMTPConnection: async () => {
+    const res = await apiClient.post('/settings/test-smtp');
+    return res.data;
+  },
+
+  testGeminiConnection: async () => {
+    const res = await apiClient.post('/settings/test-gemini');
+    return res.data;
+  },
+
+  testSearchConnection: async () => {
+    const res = await apiClient.post('/settings/test-search');
+    return res.data;
+  },
+
+  // Live Buyer Discovery Search
+  searchBuyers: async (searchPayload) => {
+    const res = await apiClient.post('/search', searchPayload);
     return res.data;
   }
 };

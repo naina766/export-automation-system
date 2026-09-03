@@ -1,299 +1,267 @@
-# EXPORT AUTOMATION SYSTEM — SINGING BOWLS
+# AI-Powered Export Outreach Automation (EXPORT Automation System)
 
-> **AI-assisted B2B lead discovery, validation, classification, and outreach platform built with FastAPI, Python, React.js, Vite, Tailwind CSS, and Google Gemini AI.**
-
----
-
-## 📌 1. Project Overview
-
-The **EXPORT Automation System** is an end-to-end full-stack export automation platform purpose-built for an export enterprise selling authentic handcrafted **Himalayan Singing Bowls** and acoustic meditation instruments.
-
-The system automates the complete B2B export outreach pipeline:
-1. **Buyer Discovery & Upload:** Ingest raw international buyer leads via CSV or modular source adapters (Google, LinkedIn, Directories).
-2. **Data Extraction & Normalization:** Standardizes column headers and sanitizes data.
-3. **Email Validation & Deduplication:** Lightweight syntax verification via `email-validator` and suppression against previous outreach logs (`sent_log.csv`).
-4. **AI Lead Classification:** Segments contacts into **B2B Wholesale Businesses** vs **Individual Retail Buyers** using Google Gemini 1.5 Flash AI, with intelligent **Demo Heuristic Fallback** for zero-credential operation.
-5. **Campaign Composition & Personalization:** Dynamically customizes email copy (`{{buyer_name}}`, `{{company_name}}`, `{{country}}`) and attaches verified export product brochures (`assets/company_presentation.pdf`).
-6. **Safe Email Outreach:** Dispatches via Gmail SMTP or simulates deliveries in zero-risk **Demo Mode** (`status=DEMO_SENT`).
-7. **Audit Logging & Campaign Analytics:** Real-time KPI performance tracking with one-click downloadable CSV reports.
+> **An automated production-grade full-stack system that discovers international buyers through live web search APIs, validates contact details, qualifies leads using Google Gemini AI, and executes personalized export outreach through Gmail SMTP with PDF brochure attachments.**
 
 ---
 
-## 🚀 2. Architecture & Pipeline Workflow
+## 📌 1. Overview & Primary Workflow
+
+The **EXPORT Automation System** is an end-to-end B2B sales automation platform purpose-built for an export enterprise manufacturing and distributing authentic handcrafted **Himalayan Singing Bowls** and sound healing meditation instruments.
+
+**The system operates API-first without requiring CSV file uploads to discover buyers:**
 
 ```text
-       Lead Ingestion (CSV Upload / Demo Search Adapters)
-                              │
-                              ▼
-           Data Extraction & Column Normalization
-                              │
-                              ▼
-             Email Validation & Deduplication
-                              │
-                              ▼
-          Gemini 1.5 AI / Heuristic Classification
-                 ╱                        ╲
-       B2B Business Leads          Individual Buyers
-                 ╲                        ╱
-                              ▼
-            Audience Targeting & Personalization
-                              │
-                              ▼
-         Outreach Dispatch (Safe Demo / Gmail SMTP)
-                              │
-                              ▼
-            Activity Logger (data/sent_log.csv)
-                              │
-                              ▼
-           Real-Time Analytics & CSV Export Report
+USER INPUT (Target Product, Country, Buyer Type, Keywords)
+        ↓
+REAL BUYER SEARCH API (Google Custom Search / Serper / SerpAPI / Tavily)
+        ↓
+REAL BUSINESS DISCOVERY & PUBLIC WEBSITE CONTACT EXTRACTION
+        ↓
+EMAIL SYNTAX & DOMAIN VALIDATION (No fabricated emails; missing = null)
+        ↓
+GEMINI AI LEAD QUALIFICATION (B2B Distributor vs Retail Consumer)
+        ↓
+PERSONALIZED OUTREACH DRAFTING (Multi-variable template with PDF catalog)
+        ↓
+USER CONFIRMATION MODAL & REAL GMAIL SMTP TRANSMISSION
+        ↓
+AUDIT LOGGING & REAL-TIME KPI REPORTING
 ```
 
 ---
 
-## 🛠️ 3. Technology Stack
+## 🎯 2. Problem Statement
+
+Handmade artisan exporters (such as Himalayan Singing Bowls producers) face significant international expansion challenges:
+1. **Manual Prospecting Bottlenecks:** Manually researching international distributors, meditation studios, and acoustic wellness importers across global markets (US, UK, Germany, France, Canada, Australia) is slow and non-scalable.
+2. **High Bounce Rates & Reputation Damage:** Sending cold emails without rigorous RFC-compliant syntax checking and cross-campaign deduplication harms sender domain reputation.
+3. **Generic Impersonal Messaging:** Unsegmented, non-personalized cold outreach fails to establish credibility with overseas enterprise buyers.
+4. **Disjointed Outreach Stacks:** Fragmented tools create data silos between search discovery, qualification, catalog dispatch, and audit logging.
+
+---
+
+## 🌟 3. Key Features & Production Architecture
+
+```text
+               ┌────────────────────────────────────────────────────────┐
+               │    Production Web Application (React 18 + Vite)        │
+               │  Dashboard • Discover Buyers • AI Qualify • Send • ... │
+               └──────────────────────────┬─────────────────────────────┘
+                                          │ HTTP / REST
+                                          ▼
+               ┌────────────────────────────────────────────────────────┐
+               │              FastAPI Backend (backend/main.py)         │
+               └──────┬───────────────────┬───────────────────┬─────────┘
+                      │                   │                   │
+                      ▼                   ▼                   ▼
+           ┌──────────────────────┐ ┌───────────────┐ ┌─────────────────┐
+           │ Live Search Provider │ │ Gemini AI API │ │ Gmail SMTP TLS  │
+           │ (Google CSE / Serper │ │ (Configurable │ │ (Port 587,      │
+           │  SerpAPI / Tavily)   │ │  model_name)  │ │  Backoff Retry) │
+           └──────────────────────┘ └───────────────┘ └─────────────────┘
+                      │                   │                   │
+                      ▼                   ▼                   ▼
+           ┌────────────────────────────────────────────────────────────┐
+           │            Thread-Safe CSV & JSON Persistent Storage        │
+           │    buyers.csv • business_emails.csv • sent_log.csv • ...   │
+           └────────────────────────────────────────────────────────────┘
+```
+
+- 🌐 **Live Web Buyer Discovery:** Modular provider architecture connecting to legitimate search APIs (`google_cse`, `serper`, `serpapi`, `tavily`). Discovers company names, domains, contact hints, source URLs, and timestamps.
+- 🛡️ **Zero Fake Data Guarantee:** If search API credentials are not configured, the system returns an explicit `SEARCH_PROVIDER_NOT_CONFIGURED` status with helpful setup directions. Missing emails are strictly set to `null` (never fabricated).
+- 📧 **Email Syntax Validation & Deduplication:** RFC 5322 domain format checking and cross-campaign deduplication against previous dispatches in [`data/sent_log.csv`](data/sent_log.csv).
+- 🤖 **Gemini AI Lead Qualification:** Semantic prompt qualification using configurable Gemini models (`GEMINI_MODEL`, defaulting to `gemini-1.5-flash`) to categorize commercial B2B partners.
+- ✉️ **Dynamic Personalization:** Sanitized multi-variable placeholder replacement (`{{company_name}}`, `{{contact_name}}`, `{{country}}`, `{{buyer_type}}`, `{{product}}`) with live preview.
+- 📎 **MIME PDF Brochure Attachments:** Automatic attachment verification and packaging of [`assets/company_presentation.pdf`](assets/company_presentation.pdf).
+- 🔒 **Production Gmail SMTP Transport:** Authenticated STARTTLS transmission with exponential backoff retries on transient connection failures.
+- 🎯 **Send Test Email Capability:** Dedicated test recipient dispatch tab to verify end-to-end delivery to any target inbox before executing bulk campaigns.
+- 📊 **Audit Logs & Exportable Analytics:** Persistent tracking in `data/sent_log.csv` with one-click CSV report export.
+
+---
+
+## 💻 4. Tech Stack
 
 ### Frontend
-- **Framework:** React 18 with Vite
-- **Styling:** Tailwind CSS + Custom Dark Theme Glassmorphism
-- **Routing:** React Router v6
+- **Framework:** React 18 + Vite
+- **Styling:** Tailwind CSS (Dark SaaS Glassmorphism design system)
+- **Routing:** React Router DOM v6
 - **Icons:** Lucide React
 - **HTTP Client:** Axios
 
 ### Backend
-- **Framework:** Python 3.10+, FastAPI, Uvicorn
-- **Data & Processing:** Pandas, Pydantic, Python-Dotenv
-- **Validation:** Email-Validator, Regular Expressions
-- **AI & NLP:** Google Gemini 1.5 Flash (`google-generativeai` / `google-genai`)
-- **Email Transport:** Python `smtplib` (STARTTLS / Gmail App Password)
-- **PDF Generation:** ReportLab
-- **Testing:** PyTest
-
-### Storage
-- Flat-file CSV & JSON persistence (`data/*.csv`, `data/settings.json`)
+- **Framework:** FastAPI (Python 3.10+) + Uvicorn
+- **Data Engine:** Pandas, Pydantic v2
+- **Email Transport:** `smtplib`, `email.mime`, `email-validator`
+- **AI Classification:** Google Generative AI SDK (`google.generativeai`)
+- **Search Provider:** HTTP client integrations (`google_cse`, `serper`, `serpapi`, `tavily`)
+- **Testing:** Pytest, FastAPI TestClient
 
 ---
 
-## 📁 4. Project Structure
+## 📁 5. Repository Structure
 
 ```text
 ExportAutomation/
-├── backend/
-│   ├── main.py                     # FastAPI REST API endpoints & CORS middleware
-│   ├── config.py                   # Central configuration, paths & env loader
-│   ├── requirements.txt            # Python backend dependencies
-│   │
-│   ├── search/
-│   │   ├── __init__.py
-│   │   └── demo_search.py          # Google, LinkedIn & Directory search adapters
-│   │
-│   ├── extraction/
-│   │   ├── __init__.py
-│   │   └── data_extractor.py       # Header alias mapping & CSV sanitization
-│   │
-│   ├── validation/
-│   │   ├── __init__.py
-│   │   └── email_validator.py      # Syntax checks, deduplication & suppression
-│   │
-│   ├── classification/
-│   │   ├── __init__.py
-│   │   └── gemini_classifier.py    # Gemini 1.5 Flash & Heuristic Fallback engine
-│   │
-│   ├── outreach/
-│   │   ├── __init__.py
-│   │   ├── attachment_handler.py   # PDF attachment verification & packaging
-│   │   └── gmail_sender.py         # Personalization, Demo simulation & Gmail SMTP
-│   │
-│   ├── logging_module/
-│   │   ├── __init__.py
-│   │   └── activity_logger.py      # Append-only logger for sent_log.csv
-│   │
-│   └── reports/
-│       ├── __init__.py
-│       └── report_generator.py     # Metrics aggregator & CSV report exporter
-│
-├── frontend/
-│   ├── package.json                # Frontend dependencies & scripts
-│   ├── vite.config.js              # Vite server & proxy configuration
-│   ├── tailwind.config.js          # Tailwind CSS theme & extensions
-│   ├── index.html                  # HTML entry point
-│   └── src/
-│       ├── main.jsx                # React root entry point
-│       ├── App.jsx                 # Routing & global responsive layout
-│       ├── services/
-│       │   └── api.js              # Centralized Axios API service
-│       ├── components/
-│       │   ├── Sidebar.jsx         # Navigation drawer & mode indicators
-│       │   ├── Navbar.jsx          # Top navigation bar
-│       │   ├── StatCard.jsx        # Metric KPI cards
-│       │   ├── StatusBadge.jsx     # Semantic status badges
-│       │   ├── DataTable.jsx       # Reusable responsive table
-│       │   ├── PipelineFunnel.jsx  # Visual pipeline step indicator
-│       │   ├── Notification.jsx    # Alert banner component
-│       │   └── LoadingSpinner.jsx  # Loading spinner animation
-│       ├── pages/
-│       │   ├── Dashboard.jsx       # Real-time overview & recent activity
-│       │   ├── Upload.jsx          # Drag & drop CSV upload & demo data loader
-│       │   ├── Classification.jsx  # AI segmentation into Business & Individual
-│       │   ├── SendCampaign.jsx    # Campaign composer, preview & dispatcher
-│       │   ├── Reports.jsx         # Performance analytics & CSV export
-│       │   └── Settings.jsx        # Runtime settings & credential status
-│       └── styles/
-│           └── index.css           # Tailwind base styles & glassmorphism
-│
-├── data/
-│   ├── demo_buyers.csv             # Realistic sample buyer dataset
-│   ├── buyers.csv                  # Current active buyer leads
-│   ├── business_emails.csv         # B2B classified leads
-│   ├── individual_emails.csv       # Individual consumer leads
-│   ├── sent_log.csv                # Historical outreach activity log
-│   └── settings.json               # Persistent runtime settings
-│
+├── .env.example                      # Production environment template
+├── .env                              # Active environment credentials
+├── README.md                         # Complete project documentation
+├── requirements.txt                  # Python dependencies
+├── pytest.ini                        # Pytest configuration
 ├── assets/
-│   ├── generate_pdf.py             # Script to generate product catalog PDF
-│   └── company_presentation.pdf    # Singing Bowls wholesale export brochure
-│
-├── tests/
-│   ├── test_api.py                 # FastAPI REST endpoint tests
-│   ├── test_validation.py          # Email syntax & deduplication tests
-│   ├── test_classification.py      # AI & Heuristic classification tests
-│   └── test_reports.py             # Analytics & success rate calculation tests
-│
-├── .env.example                    # Template environment variables
-├── .env                            # Local environment configuration
-├── .gitignore                      # Git ignore rules
-└── README.md                       # Comprehensive documentation
+│   └── company_presentation.pdf      # Himalayan Singing Bowls export catalog
+├── data/
+│   ├── buyers.csv                    # Ingested & discovered leads
+│   ├── business_emails.csv           # B2B qualified leads
+│   ├── individual_emails.csv         # Retail / individual leads
+│   ├── sent_log.csv                  # Immutable campaign audit log
+│   └── settings.json                 # Non-sensitive runtime settings
+├── backend/
+│   ├── main.py                       # FastAPI entry point & REST endpoints
+│   ├── config.py                     # Configuration & environment loader
+│   ├── search/
+│   │   ├── base.py                   # BuyerSearchProvider abstract interface
+│   │   ├── parser.py                 # Metadata & domain extraction
+│   │   ├── normalizer.py             # Schema normalization & timestamps
+│   │   └── web_search_provider.py    # Production search API implementation
+│   ├── extraction/
+│   │   └── data_extractor.py         # CSV parser & column normalizer
+│   ├── validation/
+│   │   └── email_validator.py        # Email syntax validation & deduplication
+│   ├── classification/
+│   │   └── gemini_classifier.py      # Gemini AI qualification engine
+│   ├── outreach/
+│   │   └── gmail_sender.py           # Gmail SMTP dispatcher with retry
+│   │   └── attachment_handler.py     # PDF MIME attachment handler
+│   ├── logging_module/
+│   │   └── activity_logger.py        # Audit logging service
+│   └── reports/
+│       └── report_generator.py       # Metrics & CSV report generator
+├── frontend/
+│   ├── package.json
+│   ├── vite.config.js
+│   ├── tailwind.config.js
+│   └── src/
+│       ├── App.jsx                   # Layout & global routing
+│       ├── services/
+│       │   └── api.js                # Centralized Axios API client
+│       ├── components/               # UI components (Navbar, Sidebar, StatCard, ...)
+│       └── pages/
+│           ├── Dashboard.jsx         # Pipeline funnel & KPI overview
+│           ├── DiscoverBuyers.jsx    # Live web search buyer discovery (PRIMARY)
+│           ├── Upload.jsx            # Lead Store & Optional CSV Import
+│           ├── Classification.jsx    # Gemini AI lead segmentation
+│           ├── SendCampaign.jsx      # SMTP dispatcher & Test Email
+│           ├── Reports.jsx           # Analytics & CSV export
+│           └── Settings.jsx          # Service status & parameters
+└── tests/
+    ├── test_api.py                   # REST API test suite
+    ├── test_classification.py        # Gemini classification tests
+    ├── test_reports.py               # KPI report tests
+    ├── test_search_discovery.py      # Search query, parser & provider tests
+    └── test_validation.py            # Email validation & deduplication tests
 ```
 
 ---
 
-## ⚡ 5. Installation & Setup
+## 🚀 6. Installation & Quickstart
 
-### Prerequisites
-- Python 3.10+
-- Node.js 18+ and npm
+### Step 1: Clone Repository & Set Up Backend
 
----
-
-### Backend Setup
-
-1. **Navigate to the backend folder:**
-   ```bash
-   cd backend
-   ```
-
-2. **Install Python dependencies:**
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-3. **Configure Environment Variables:**
-   Create `.env` in the root or `backend/`:
-   ```bash
-   cp .env.example .env
-   ```
-
-4. **Start the FastAPI Backend Server:**
-   ```bash
-   uvicorn main:app --reload --port 8000
-   ```
-   The backend API will run at **`http://localhost:8000`** (Swagger docs at **`http://localhost:8000/docs`**).
-
----
-
-### Frontend Setup
-
-1. **Open a new terminal and navigate to `frontend`:**
-   ```bash
-   cd frontend
-   ```
-
-2. **Install npm dependencies:**
-   ```bash
-   npm install
-   ```
-
-3. **Start the Vite development server:**
-   ```bash
-   npm run dev
-   ```
-   The React dashboard will run at **`http://localhost:5173`**.
-
----
-
-## ⚙️ 6. Environment Configuration (`.env`)
-
-| Variable | Description | Default |
-|---|---|---|
-| `EMAIL_MODE` | Email dispatch mode (`demo` or `smtp`) | `demo` |
-| `GEMINI_API_KEY` | Google Gemini API Key (Leave empty to use Demo Heuristic mode) | `""` |
-| `GMAIL_EMAIL` | Gmail account for live SMTP outreach | `""` |
-| `GMAIL_APP_PASSWORD` | 16-character Gmail App Password | `""` |
-| `SMTP_HOST` | SMTP server host | `smtp.gmail.com` |
-| `SMTP_PORT` | SMTP port | `587` |
-| `SEND_DELAY` | Delay between consecutive email sends in seconds | `2` |
-| `MAX_EMAILS_PER_RUN` | Maximum emails per campaign batch | `50` |
-
----
-
-## 🛡️ 7. Zero-Risk Demo Mode vs Live SMTP Mode
-
-### Demo Mode (`EMAIL_MODE=demo` — Default)
-- **Zero Network Risk:** Never connects to external SMTP servers or contacts real mailboxes.
-- Generates personalized emails, records timestamp and status as `DEMO_SENT`.
-- Logs all attempts to `data/sent_log.csv`.
-- Displays real-time generated email previews with substituted variables.
-
-### Live SMTP Mode (`EMAIL_MODE=smtp`)
-- Connects to Gmail SMTP (`smtp.gmail.com:587`, STARTTLS) with `GMAIL_EMAIL` and `GMAIL_APP_PASSWORD`.
-- If credentials are not provided, it automatically falls back safely to Demo Mode with an alert.
-
----
-
-## 📡 8. REST API Endpoints
-
-| Method | Endpoint | Description |
-|---|---|---|
-| `GET` | `/api/health` | Service health status and active mode |
-| `GET` | `/api/dashboard` | Dashboard KPI metrics, pipeline counts, and system status |
-| `GET` | `/api/leads` | Retrieve all current leads from `data/buyers.csv` |
-| `POST` | `/api/upload` | Upload, normalize, validate, and deduplicate a CSV file |
-| `POST` | `/api/load-demo` | Ingest sample `data/demo_buyers.csv` dataset |
-| `POST` | `/api/validate` | Validate a single email address |
-| `GET` | `/api/classification` | Retrieve classified business and individual leads |
-| `POST` | `/api/classify` | Execute Gemini AI / Demo Fallback classification |
-| `POST` | `/api/send` | Launch outreach campaign (Demo simulation or SMTP) |
-| `GET` | `/api/activity` | Retrieve recent send logs from `data/sent_log.csv` |
-| `GET` | `/api/report` | Retrieve campaign analytics and success rate |
-| `GET` | `/api/report/download` | Download full campaign report as CSV |
-| `GET` | `/api/settings` | Retrieve runtime settings and credential status |
-| `POST` | `/api/settings` | Update runtime settings in `data/settings.json` |
-| `GET` | `/api/search/demo` | Query modular source adapters for leads |
-
----
-
-## 🧪 9. Automated Testing
-
-Run the PyTest test suite:
 ```bash
-pytest -v
+cd ExportAutomation
+
+# Create and activate virtual environment
+python -m venv venv
+# Windows:
+venv\Scripts\activate
+# Linux/macOS:
+source venv/bin/activate
+
+# Install dependencies
+pip install -r requirements.txt
 ```
 
-### Test Coverage:
-- `test_api.py`: Validates all FastAPI REST endpoints (`/health`, `/dashboard`, `/upload`, `/classify`, `/send`, `/report`, `/settings`).
-- `test_validation.py`: Tests email syntax validation, case normalization, and batch deduplication.
-- `test_classification.py`: Tests heuristic fallback classification logic for business vs individual profiles.
-- `test_reports.py`: Tests KPI calculation, success rate formulas, and CSV report export.
+### Step 2: Configure Environment (`.env`)
+
+Create a `.env` file in the root directory:
+
+```env
+# 1. Search Provider (google_cse, serper, serpapi, tavily)
+SEARCH_PROVIDER=google_cse
+SEARCH_API_KEY=your_search_api_key
+SEARCH_ENGINE_ID=your_custom_search_engine_cx_id
+
+# 2. Gemini AI Lead Qualification
+GEMINI_API_KEY=your_gemini_api_key
+GEMINI_MODEL=gemini-1.5-flash
+
+# 3. Gmail SMTP Transport
+GMAIL_EMAIL=your_export_sales_email@gmail.com
+GMAIL_APP_PASSWORD=abcd efgh ijkl mnop
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+
+# 4. Campaign Parameters
+SEARCH_KEYWORD=Himalayan Sound Healing Bowls
+SEND_DELAY=1
+MAX_EMAILS_PER_RUN=25
+DAILY_SEND_LIMIT=100
+```
+
+#### How to Obtain Google Custom Search JSON API Credentials:
+1. Go to [Google Cloud Console](https://console.cloud.google.com/) and enable the **Custom Search API**.
+2. Create an API Key under **APIs & Services > Credentials** -> Set as `SEARCH_API_KEY`.
+3. Go to [Google Programmable Search Engine](https://programmablesearchengine.google.com/), create an engine searching the entire web (`Search the entire web: ON`), and copy the Search Engine ID (`cx`) -> Set as `SEARCH_ENGINE_ID`.
+
+### Step 3: Launch Backend Server
+
+```bash
+uvicorn backend.main:app --reload --port 8000
+```
+
+API documentation is available at `http://localhost:8000/docs`.
+
+### Step 4: Install & Launch Frontend
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Open your browser at `http://localhost:5173`.
 
 ---
 
-## 🎯 10. Complete End-to-End Demo Workflow
+## 🧪 7. Running Automated Tests
 
-1. Open **`http://localhost:5173`** in your browser.
-2. Navigate to **Lead Upload** and click **⚡ Load Demo Buyers Dataset**.
-3. Inspect the normalized leads table with validation and deduplication badges.
-4. Navigate to **AI Classification** and click **Run Lead Classification**.
-5. Observe the split into **B2B Business Leads** and **Individual Leads**.
-6. Navigate to **Send Campaign**, select **Business Only**, edit the template with `{{buyer_name}}` and `{{company_name}}`, and review the live preview.
-7. Click **Launch Safe Demo Send** and view generated outbox previews.
-8. Navigate to **Reports** to see updated KPI cards, visual charts, and click **Download Full CSV Report**.
-9. Navigate to **Settings** to customize keyword, delay, rate limits, or toggle email mode.
+Run the full pytest suite:
+
+```bash
+pytest tests/ -v
+```
+
+All external search and Gemini API calls are properly mocked during test execution to ensure fast, zero-credit automated testing.
+
+---
+
+## 🧭 8. Manual End-to-End Testing Procedure
+
+1. **Start Services:** Launch backend on port 8000 and frontend on port 5173.
+2. **Navigate to Discover Buyers (`/discover`):**
+   - Target Product: `Himalayan Sound Healing Bowls`
+   - Country: `United States`
+   - Buyer Type: `Distributor`
+   - Keywords: `sound healing, meditation, wellness, singing bowls`
+   - Limit: `10`
+   - Click **"Search Live Buyers"**.
+3. **Verify Discovery:** Discovered leads appear with company name, domain, clickable website, detected country, email status (`VALID_FORMAT` or `MISSING`), and clickable source URLs.
+4. **Run AI Qualification (`/classify`):**
+   - Click **"Run Gemini AI Qualification"**.
+   - Gemini qualifies leads into B2B Distributors vs Individual buyers with numerical scores and rationale.
+5. **Send Campaign / Test Email (`/send`):**
+   - Switch to **"Send Test Email"** tab, enter your test email address.
+   - Click **"Send Email"**.
+   - In the confirmation modal, review recipient, subject, and PDF attachment, then click **"Send Email"**.
+6. **Verify Delivery & Reports (`/reports`):**
+   - Check `data/sent_log.csv` and the Reports page to verify successful dispatch logged in the audit trail.

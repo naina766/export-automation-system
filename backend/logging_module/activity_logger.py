@@ -39,14 +39,14 @@ class ActivityLogger:
         company: str,
         email: str,
         status: str,
-        mode: str = "demo",
+        mode: str = "SMTP",
         classification: str = "business",
         campaign: str = "Singing Bowls Outreach",
         error: str = ""
     ) -> Dict[str, Any]:
         """
         Record a campaign send event.
-        Allowed status: DEMO_SENT | SENT | FAILED | SKIPPED_DUPLICATE | INVALID_EMAIL
+        Allowed status: SENT | FAILED | SKIPPED_DUPLICATE | INVALID_EMAIL
         """
         cls.ensure_log_file()
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")

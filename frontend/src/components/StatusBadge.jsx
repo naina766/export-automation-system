@@ -5,7 +5,7 @@ export const StatusBadge = ({ status, text }) => {
 
   let styles = 'bg-slate-800/80 text-slate-300 border-slate-700';
 
-  if (['valid', 'sent', 'demo_sent', 'business'].includes(normalized)) {
+  if (['valid', 'sent', 'business', 'connected'].includes(normalized)) {
     styles = 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30';
   } else if (['individual'].includes(normalized)) {
     styles = 'bg-purple-500/10 text-purple-400 border-purple-500/30';
@@ -13,6 +13,8 @@ export const StatusBadge = ({ status, text }) => {
     styles = 'bg-rose-500/10 text-rose-400 border-rose-500/30';
   } else if (['missing', 'skipped_duplicate', 'skipped'].includes(normalized)) {
     styles = 'bg-amber-500/10 text-amber-400 border-amber-500/30';
+  } else if (['test', 'smtp_test'].includes(normalized)) {
+    styles = 'bg-amber-500/10 text-amber-300 border-amber-500/30';
   } else if (['ready', 'active', 'healthy'].includes(normalized)) {
     styles = 'bg-blue-500/10 text-blue-400 border-blue-500/30';
   }

@@ -32,6 +32,15 @@ def validate_email_address(email: str) -> Dict[str, Any]:
             "reason": "Malformed email format"
         }
 
+    # Reject reserved RFC placeholder and test domains
+    domain = cleaned.split("@")[-1]
+    if domain in ["example.com", "example.org", "example.net"] or domain.endswith((".example", ".test", ".invalid", ".localhost")):
+        return {
+            "valid": False,
+            "normalized_email": cleaned,
+            "reason": f"Reserved placeholder domain '@{domain}' is not an active production contact"
+        }
+
     try:
         valid_res = ext_validate_email(cleaned, check_deliverability=False)
         return {
@@ -69,10 +78,10 @@ class EmailValidator:
         try:
             df = pd.read_csv(SENT_LOG_CSV, dtype=str)
             if "email" in df.columns and "status" in df.columns:
-                contacted = df[df["status"].isin(["SENT", "DEMO_SENT"])]["email"].dropna()
+                contacted = df[df["status"].isin(["SENT", "sent"])]["email"].dropna()
                 return set(contacted.astype(str).str.strip().str.lower())
             elif "email_address" in df.columns and "status" in df.columns:
-                contacted = df[df["status"].isin(["SENT", "DEMO_SENT", "sent", "demo_sent"])]["email_address"].dropna()
+                contacted = df[df["status"].isin(["SENT", "sent"])]["email_address"].dropna()
                 return set(contacted.astype(str).str.strip().str.lower())
             return set()
         except Exception:
