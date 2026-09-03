@@ -918,12 +918,21 @@ async def test_gemini_connection():
     try:
         import google.generativeai as genai
         genai.configure(api_key=gemini_key)
-        model = genai.GenerativeModel(gemini_model)
-        # Fast health test query
-        res = model.generate_content("Respond with exactly: OK")
+        active_model = gemini_model
+        try:
+            model = genai.GenerativeModel(active_model)
+            res = model.generate_content("Respond with exactly: OK")
+        except Exception as initial_err:
+            if "not found" in str(initial_err).lower() or "404" in str(initial_err) or "not supported" in str(initial_err).lower():
+                active_model = "gemini-2.5-flash"
+                model = genai.GenerativeModel(active_model)
+                res = model.generate_content("Respond with exactly: OK")
+            else:
+                raise initial_err
+
         return {
             "success": True,
-            "message": f"Gemini AI operational! Connected to {gemini_model}."
+            "message": f"Gemini AI operational! Connected to {active_model}."
         }
     except Exception as e:
         raise HTTPException(

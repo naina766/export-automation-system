@@ -23,10 +23,13 @@ class LeadClassifier:
         cls,
         leads: List[Dict[str, Any]],
         api_key: str,
-        model_name: str = "gemini-1.5-flash",
+        model_name: str = "gemini-2.5-flash",
         product: str = "Himalayan Sound Healing Bowls"
     ) -> List[Dict[str, Any]]:
         """Call Google Gemini API using configurable model to qualify export leads."""
+        if model_name in ["gemini-1.5-flash", "gemini-1.5-pro", "models/gemini-1.5-flash", "models/gemini-1.5-pro", "gemini-1.0-pro"]:
+            model_name = "gemini-2.5-flash"
+
         prompt = (
             f"You are an expert B2B international export qualification AI for: '{product}'.\n"
             "Analyze each real business lead below and classify them for international export outreach.\n\n"
@@ -46,8 +49,17 @@ class LeadClassifier:
 
         import google.generativeai as genai
         genai.configure(api_key=api_key)
-        model = genai.GenerativeModel(model_name)
-        response = model.generate_content(prompt)
+        try:
+            model = genai.GenerativeModel(model_name)
+            response = model.generate_content(prompt)
+        except Exception as model_err:
+            # Fallback to supported standard model if configured model is retired/not found
+            if "not found" in str(model_err).lower() or "404" in str(model_err) or "not supported" in str(model_err).lower():
+                fallback_model = "gemini-2.5-flash"
+                model = genai.GenerativeModel(fallback_model)
+                response = model.generate_content(prompt)
+            else:
+                raise
         raw_text = response.text.strip()
 
         if raw_text.startswith("```"):

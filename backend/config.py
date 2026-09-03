@@ -78,7 +78,10 @@ def get_gemini_config() -> tuple[str, str]:
     load_dotenv(PROJECT_ROOT / ".env", override=True)
     load_dotenv(BACKEND_DIR / ".env", override=True)
     api_key = os.getenv("GEMINI_API_KEY", "").strip()
-    model_name = os.getenv("GEMINI_MODEL", "gemini-1.5-flash").strip()
+    model_name = os.getenv("GEMINI_MODEL", "gemini-2.5-flash").strip()
+    # If deprecated models are set in environment, automatically upgrade to gemini-2.5-flash
+    if model_name in ["gemini-1.5-flash", "gemini-1.5-pro", "models/gemini-1.5-flash", "models/gemini-1.5-pro", "gemini-1.0-pro"]:
+        model_name = "gemini-2.5-flash"
     return api_key, model_name
 
 def get_gmail_credentials() -> tuple[str, str]:
