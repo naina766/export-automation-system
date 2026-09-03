@@ -1,11 +1,11 @@
 /**
  * Business-friendly error message transformer.
- * Prevents technical jargon, stack traces, and developer diagnostics from leaking into the UI.
+ * Converts technical exceptions, HTTP status codes, and developer diagnostics into clean business notifications.
  */
 export function formatBusinessError(err, fallback = "Something went wrong. Please try again.") {
   if (!err) return fallback;
 
-  // Handle strings directly
+  // Handle direct string errors
   if (typeof err === 'string') {
     return sanitizeTechnicalText(err, fallback);
   }
@@ -18,7 +18,10 @@ export function formatBusinessError(err, fallback = "Something went wrong. Pleas
     }
     if (typeof detail === 'object') {
       if (detail.error === 'SEARCH_PROVIDER_NOT_CONFIGURED') {
-        return "Buyer discovery is not configured yet. Please update your discovery settings.";
+        return "Buyer discovery isn't connected yet. Please update your discovery settings.";
+      }
+      if (detail.error === 'DEMO_DATA_OUTREACH_BLOCKED') {
+        return "Demo data cannot be sent live outreach.";
       }
       if (detail.message) {
         return sanitizeTechnicalText(detail.message, fallback);
@@ -26,21 +29,41 @@ export function formatBusinessError(err, fallback = "Something went wrong. Pleas
     }
   }
 
-  // Network / server connection errors
-  if (err.message && (err.message.includes('Network Error') || err.message.includes('ECONNREFUSED'))) {
-    return "Unable to connect to the export platform. Please check your connection and try again.";
+  // HTTP status code handling
+  const status = err.response?.status;
+  if (status === 401) {
+    return "Your connection needs attention. Please check Settings.";
   }
-
-  if (err.response?.status === 404) {
+  if (status === 403) {
+    return "Access to this service is restricted. Please check your credentials in Settings.";
+  }
+  if (status === 404) {
     return "The requested information could not be found.";
   }
-
-  if (err.response?.status === 422) {
+  if (status === 422) {
     return "Please verify the entered details and try again.";
   }
-
-  if (err.response?.status >= 500) {
+  if (status === 429) {
+    return "Discovery rate limit reached. Please wait a moment before trying again.";
+  }
+  if (status === 502 || status === 503) {
+    return "That service is temporarily unavailable. Please try again.";
+  }
+  if (status >= 500) {
     return "Our service is temporarily busy. Please try again in a moment.";
+  }
+
+  // Network / server connection errors
+  if (err.message) {
+    if (err.message.includes('ECONNREFUSED')) {
+      return "Unable to connect right now.";
+    }
+    if (err.message.includes('Network Error')) {
+      return "Unable to connect to the export platform. Please check your connection.";
+    }
+    if (err.message.includes('timeout')) {
+      return "The operation took longer than expected. Please try again.";
+    }
   }
 
   return fallback;
@@ -62,19 +85,26 @@ function sanitizeTechnicalText(text, fallback) {
     /uvicorn/i,
     /traceback/i,
     /exception/i,
-    /errno/i
+    /errno/i,
+    /axios/i,
+    /status code/i,
+    /unauthorized/i,
+    /econnrefused/i
   ];
 
   for (const pattern of technicalPatterns) {
     if (pattern.test(text)) {
       if (/search/i.test(text)) {
-        return "Buyer discovery service needs configuration in Settings.";
+        return "Buyer discovery is currently unavailable. Please check your configuration.";
       }
       if (/gemini|ai|model/i.test(text)) {
         return "AI qualification service is currently unavailable. Please try again later.";
       }
       if (/smtp|gmail|mail/i.test(text)) {
-        return "Email service connection issue. Please check your email settings.";
+        return "Email account connection issue. Please check your email settings.";
+      }
+      if (/unauthorized/i.test(text)) {
+        return "Your connection needs attention. Please check Settings.";
       }
       return fallback;
     }
@@ -82,3 +112,5 @@ function sanitizeTechnicalText(text, fallback) {
 
   return text;
 }
+
+export default formatBusinessError;

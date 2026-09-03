@@ -167,6 +167,24 @@ export const apiService = {
   searchBuyers: async (searchPayload) => {
     const res = await apiClient.post('/search', searchPayload);
     return res.data;
+  },
+
+  // Sample Workflow Demonstration
+  getSampleBuyers: async (productId = null) => {
+    const url = productId ? `/sample-buyers?product_id=${encodeURIComponent(productId)}` : '/sample-buyers';
+    const res = await apiClient.get(url);
+    return res.data;
+  },
+
+  // Email Enrichment & Manual Editing
+  enrichLead: async (payload) => {
+    const res = await apiClient.post('/leads/enrich', payload);
+    return res.data;
+  },
+
+  updateLead: async (payload) => {
+    const res = await apiClient.post('/leads/update', payload);
+    return res.data;
   }
 };
 

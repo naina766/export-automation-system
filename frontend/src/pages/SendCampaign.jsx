@@ -410,6 +410,30 @@ export const SendCampaign = () => {
               onChange={(e) => setBody(e.target.value)}
               className="w-full px-3.5 py-2.5 rounded-xl bg-[#050816] border border-[#1E293B] text-white text-sm focus:outline-none focus:border-purple-500 font-sans leading-relaxed"
             />
+
+            {/* Template Variable Helper */}
+            {(subject.includes('{{product_name}}') || subject.includes('{{product}}') || body.includes('{{product_name}}') || body.includes('{{product}}')) && (
+              <div className="mt-2 p-3 rounded-xl bg-purple-500/10 border border-purple-500/20 text-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <Package className="w-4 h-4 text-purple-400 flex-shrink-0" />
+                  <div>
+                    <span className="text-slate-300">Using active product: </span>
+                    <b className="text-white">{currentProductName}</b>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1.5 text-[11px]">
+                  <span className="text-slate-400">Need to change the product used in this message?</span>
+                  <button
+                    type="button"
+                    onClick={() => navigate('/settings?tab=catalog')}
+                    className="text-purple-400 hover:text-purple-300 font-bold underline inline-flex items-center gap-0.5 shrink-0"
+                  >
+                    <span>Manage Product Settings</span>
+                    <ArrowRight className="w-3 h-3" />
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="p-3 rounded-xl bg-[#050816] border border-[#1E293B] flex items-center justify-between">

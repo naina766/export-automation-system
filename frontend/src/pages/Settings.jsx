@@ -280,12 +280,20 @@ export const Settings = () => {
     setSubmittingProduct(false);
   };
 
+  const [activatingId, setActivatingId] = useState(null);
+
   const handleActivate = async (productId, productName) => {
-    const res = await activateProduct(productId);
-    if (res.success) {
-      setNotification({ type: 'success', message: `"${productName}" is now the active default product line.` });
-    } else {
-      setNotification({ type: 'error', message: res.error || 'Failed to activate product.' });
+    if (activatingId !== null) return;
+    try {
+      setActivatingId(productId);
+      const res = await activateProduct(productId);
+      if (res.success) {
+        setNotification({ type: 'success', message: 'Product switched successfully.' });
+      } else {
+        setNotification({ type: 'error', message: res.error || 'Failed to switch product.' });
+      }
+    } finally {
+      setActivatingId(null);
     }
   };
 
@@ -391,9 +399,9 @@ export const Settings = () => {
               return (
                 <div
                   key={prod.id}
-                  className={`p-5 rounded-2xl border transition-all ${
+                  className={`p-5 rounded-2xl border transition-all duration-200 ${
                     isActive 
-                      ? 'bg-[#111827] border-purple-500/40 shadow-lg shadow-purple-950/20' 
+                      ? 'bg-[#0B1220] border-purple-500/50 shadow-md shadow-purple-950/20 ring-1 ring-purple-500/20' 
                       : 'bg-[#0B1220] border-[#1E293B] hover:border-slate-700'
                   }`}
                 >
@@ -402,13 +410,13 @@ export const Settings = () => {
                       <div className="flex items-center gap-2.5 flex-wrap">
                         <h3 className="text-sm font-bold text-[#F8FAFC]">{prod.name}</h3>
                         {isActive && (
-                          <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-purple-500/20 text-purple-300 border border-purple-500/30 flex items-center gap-1">
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-500/20 text-purple-300 border border-purple-500/30 flex items-center gap-1">
                             <Check className="w-3 h-3" />
-                            <span>Active System Default</span>
+                            <span>ACTIVE</span>
                           </span>
                         )}
                         {isSelected && !isActive && (
-                          <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
                             Currently Selected in View
                           </span>
                         )}
@@ -419,14 +427,29 @@ export const Settings = () => {
                     </div>
 
                     <div className="flex items-center gap-2 shrink-0">
-                      {!isActive && (
+                      {isActive ? (
+                        <span className="px-3 py-1.5 rounded-lg bg-purple-500/10 text-purple-300 text-xs font-bold border border-purple-500/30 flex items-center gap-1.5">
+                          <Check className="w-3.5 h-3.5 text-purple-400" />
+                          <span>Active</span>
+                        </span>
+                      ) : (
                         <button
                           type="button"
+                          disabled={activatingId !== null}
                           onClick={() => handleActivate(prod.id, prod.name)}
-                          className="px-3 py-1.5 rounded-lg bg-purple-600/15 hover:bg-purple-600/30 text-purple-300 text-xs font-semibold border border-purple-500/30 transition-all flex items-center gap-1.5"
+                          className="px-3 py-1.5 rounded-lg bg-purple-600/15 hover:bg-purple-600/30 text-purple-300 text-xs font-semibold border border-purple-500/30 transition-all flex items-center gap-1.5 disabled:opacity-50"
                         >
-                          <Check className="w-3.5 h-3.5" />
-                          <span>Set as Default</span>
+                          {activatingId === prod.id ? (
+                            <>
+                              <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                              <span>Activating...</span>
+                            </>
+                          ) : (
+                            <>
+                              <Check className="w-3.5 h-3.5" />
+                              <span>Set as Active</span>
+                            </>
+                          )}
                         </button>
                       )}
                       <button
@@ -452,12 +475,12 @@ export const Settings = () => {
 
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-4 text-xs">
                     <div>
-                      <span className="text-[11px] font-bold uppercase tracking-wider text-[#64748B] block mb-1.5">
+                      <span className="text-[11px] font-bold uppercase tracking-wider text-[#64748B] block mb-2">
                         Target Keywords
                       </span>
-                      <div className="flex flex-wrap gap-1.5">
+                      <div className="flex flex-wrap gap-2">
                         {Array.isArray(prod.keywords) && prod.keywords.map((kw, i) => (
-                          <span key={i} className="px-2 py-0.5 rounded bg-[#050816] text-[#94A3B8] border border-[#1E293B] text-[11px]">
+                          <span key={i} className="px-2.5 py-1 rounded-lg bg-[#050816] text-[#94A3B8] border border-[#1E293B] text-xs font-medium leading-normal">
                             {kw}
                           </span>
                         ))}
@@ -465,12 +488,12 @@ export const Settings = () => {
                     </div>
 
                     <div>
-                      <span className="text-[11px] font-bold uppercase tracking-wider text-[#64748B] block mb-1.5">
+                      <span className="text-[11px] font-bold uppercase tracking-wider text-[#64748B] block mb-2">
                         Buyer Profiles
                       </span>
-                      <div className="flex flex-wrap gap-1.5">
+                      <div className="flex flex-wrap gap-2">
                         {Array.isArray(prod.buyer_types) && prod.buyer_types.map((bt, i) => (
-                          <span key={i} className="px-2 py-0.5 rounded bg-cyan-500/10 text-cyan-300 border border-cyan-500/20 text-[11px]">
+                          <span key={i} className="px-2.5 py-1 rounded-lg bg-cyan-500/10 text-cyan-300 border border-cyan-500/20 text-xs font-medium leading-normal">
                             {bt}
                           </span>
                         ))}
@@ -478,12 +501,12 @@ export const Settings = () => {
                     </div>
 
                     <div>
-                      <span className="text-[11px] font-bold uppercase tracking-wider text-[#64748B] block mb-1.5">
+                      <span className="text-[11px] font-bold uppercase tracking-wider text-[#64748B] block mb-2">
                         Target Export Markets
                       </span>
-                      <div className="flex flex-wrap gap-1.5">
+                      <div className="flex flex-wrap gap-2">
                         {Array.isArray(prod.target_countries) && prod.target_countries.map((tc, i) => (
-                          <span key={i} className="px-2 py-0.5 rounded bg-[#050816] text-[#94A3B8] border border-[#1E293B] text-[11px]">
+                          <span key={i} className="px-2.5 py-1 rounded-lg bg-[#050816] text-[#94A3B8] border border-[#1E293B] text-xs font-medium leading-normal">
                             {tc}
                           </span>
                         ))}

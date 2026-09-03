@@ -32,6 +32,9 @@ from search.web_search_provider import (
     SearchProviderNotConfiguredError,
     SearchProviderAPIError
 )
+from search.parser import extract_contact_from_public_website
+import httpx
+import re
 from extraction.data_extractor import DataExtractor
 from validation.email_validator import EmailValidator, validate_email_address
 from classification.gemini_classifier import LeadClassifier
@@ -129,6 +132,22 @@ class SettingsUpdateRequest(BaseModel):
     DAILY_SEND_LIMIT: Optional[int] = 100
     SMTP_HOST: Optional[str] = "smtp.gmail.com"
     SMTP_PORT: Optional[int] = 587
+
+class EnrichLeadRequest(BaseModel):
+    company: Optional[str] = None
+    website: Optional[str] = None
+    email: Optional[str] = None
+    buyer_name: Optional[str] = None
+
+class UpdateLeadRequest(BaseModel):
+    original_company: Optional[str] = None
+    original_email: Optional[str] = None
+    company_name: str
+    buyer_name: str
+    email: str
+    website: Optional[str] = None
+    country: Optional[str] = None
+    buyer_type: Optional[str] = None
 
 
 # ==========================================
@@ -265,6 +284,223 @@ async def get_all_leads(product_id: Optional[str] = None):
         return {"total": len(records), "leads": records}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to read buyers: {str(e)}")
+
+@app.get("/api/sample-buyers")
+async def get_sample_workflow_buyers(product_id: Optional[str] = None):
+    """
+    Returns explicitly labeled demonstration buyers for the sample workflow.
+    Every record is marked with is_demo=True and cannot enter production outreach.
+    """
+    prod = ProductCatalog.get_product(product_id) if product_id else ProductCatalog.get_active_product()
+    prod_name = prod.get("name", "Himalayan Sound Healing Bowls") if prod else "Himalayan Sound Healing Bowls"
+    
+    sample_records = [
+        {
+            "buyer_name": "Marcus Vance",
+            "company_name": "Vance Sound Sanctuary LLC",
+            "email": "partnerships@soundsanctuary-demo.com",
+            "country": "United States",
+            "buyer_type": "Wellness Studio & Distributor",
+            "website": "https://soundsanctuary-demo.com",
+            "phone": "+1 415-555-0192",
+            "source": "Sample Workflow Directory",
+            "email_status": "valid",
+            "is_duplicate": "False",
+            "product_id": prod.get("id") if prod else "himalayan-sound-healing-bowls",
+            "is_demo": True
+        },
+        {
+            "buyer_name": "Elena Rostova",
+            "company_name": "Nordic Mind & Body GmbH",
+            "email": "procurement@nordicmindbody-demo.de",
+            "country": "Germany",
+            "buyer_type": "Wholesale Importer",
+            "website": "https://nordicmindbody-demo.de",
+            "phone": "+49 30 1234567",
+            "source": "Sample Workflow Directory",
+            "email_status": "valid",
+            "is_duplicate": "False",
+            "product_id": prod.get("id") if prod else "himalayan-sound-healing-bowls",
+            "is_demo": True
+        },
+        {
+            "buyer_name": "Alistair Campbell",
+            "company_name": "Highland Holistic Healing Ltd",
+            "email": "contact@highlandholistic-demo.co.uk",
+            "country": "United Kingdom",
+            "buyer_type": "Specialty Retailer & Distributor",
+            "website": "https://highlandholistic-demo.co.uk",
+            "phone": "+44 131 555 0148",
+            "source": "Sample Workflow Directory",
+            "email_status": "valid",
+            "is_duplicate": "False",
+            "product_id": prod.get("id") if prod else "himalayan-sound-healing-bowls",
+            "is_demo": True
+        },
+        {
+            "buyer_name": "Claire Dubois",
+            "company_name": "Zenith Sound Therapy SARL",
+            "email": "import@zeniththerapy-demo.fr",
+            "country": "France",
+            "buyer_type": "Sound Bath Studio",
+            "website": "https://zeniththerapy-demo.fr",
+            "phone": "+33 1 42 68 00 00",
+            "source": "Sample Workflow Directory",
+            "email_status": "valid",
+            "is_duplicate": "False",
+            "product_id": prod.get("id") if prod else "himalayan-sound-healing-bowls",
+            "is_demo": True
+        },
+        {
+            "buyer_name": "David Tanaka",
+            "company_name": "Tanaka Lifestyle Imports Co.",
+            "email": "inquiry@tanakalifestyle-demo.jp",
+            "country": "Japan",
+            "buyer_type": "Wholesale Importer",
+            "website": "https://tanakalifestyle-demo.jp",
+            "phone": "+81 3 5555 0188",
+            "source": "Sample Workflow Directory",
+            "email_status": "valid",
+            "is_duplicate": "False",
+            "product_id": prod.get("id") if prod else "himalayan-sound-healing-bowls",
+            "is_demo": True
+        }
+    ]
+    return {
+        "success": True,
+        "is_demo": True,
+        "product_name": prod_name,
+        "total_found": len(sample_records),
+        "count": len(sample_records),
+        "buyers": sample_records,
+        "results": sample_records
+    }
+
+@app.post("/api/leads/enrich")
+async def retry_lead_enrichment(payload: EnrichLeadRequest):
+    """
+    Re-attempts email extraction from a buyer's company website or domain.
+    Never fabricates emails; returns not found if unavailable.
+    """
+    target_website = (payload.website or "").strip()
+    if not target_website and payload.company:
+        clean_comp = re.sub(r"[^\w\s]", "", payload.company).strip().replace(" ", "").lower()
+        target_website = f"https://www.{clean_comp}.com"
+
+    found_email = None
+    if target_website.startswith("http"):
+        try:
+            async with httpx.AsyncClient(timeout=4.0) as client:
+                contact = await extract_contact_from_public_website(target_website, client)
+                found_email = contact.get("email")
+        except Exception:
+            found_email = None
+
+    if found_email:
+        val_res = validate_email_address(found_email)
+        if val_res.get("valid") is True:
+            try:
+                if BUYERS_CSV.exists():
+                    df = pd.read_csv(BUYERS_CSV, dtype=str).fillna("")
+                    matched = False
+                    for idx, row in df.iterrows():
+                        if (payload.company and row.get("company_name", "").strip().lower() == payload.company.strip().lower()) or \
+                           (payload.website and row.get("website", "").strip().lower() == payload.website.strip().lower()):
+                            df.at[idx, "email"] = found_email
+                            df.at[idx, "email_status"] = "valid"
+                            df.at[idx, "valid"] = "True"
+                            matched = True
+                            break
+                    if matched:
+                        df.to_csv(BUYERS_CSV, index=False)
+            except Exception as e:
+                print(f"Error updating buyer email in CSV: {e}")
+
+            return {
+                "success": True,
+                "email": found_email,
+                "status": "valid",
+                "message": "Email found"
+            }
+
+    return {
+        "success": False,
+        "message": "Email could not be found. You can add it manually."
+    }
+
+@app.post("/api/leads/update")
+async def update_lead_endpoint(payload: UpdateLeadRequest):
+    """
+    Manually updates a buyer's contact details and re-validates email format.
+    """
+    val_res = validate_email_address(payload.email.strip())
+    if not val_res.get("valid"):
+        raise HTTPException(
+            status_code=422,
+            detail="Please enter a valid email address."
+        )
+
+    try:
+        if not BUYERS_CSV.exists():
+            raise HTTPException(status_code=404, detail="Lead store is empty.")
+
+        df = pd.read_csv(BUYERS_CSV, dtype=str).fillna("")
+        matched = False
+        target_idx = None
+
+        for idx, row in df.iterrows():
+            if (payload.original_company and row.get("company_name", "").strip().lower() == payload.original_company.strip().lower()) or \
+               (payload.original_email and row.get("email", "").strip().lower() == payload.original_email.strip().lower()) or \
+               (row.get("company_name", "").strip().lower() == payload.company_name.strip().lower()):
+                target_idx = idx
+                matched = True
+                break
+
+        if matched and target_idx is not None:
+            df.at[target_idx, "buyer_name"] = payload.buyer_name.strip()
+            df.at[target_idx, "company_name"] = payload.company_name.strip()
+            df.at[target_idx, "email"] = payload.email.strip()
+            if payload.website:
+                df.at[target_idx, "website"] = payload.website.strip()
+            if payload.country:
+                df.at[target_idx, "country"] = payload.country.strip()
+            if payload.buyer_type:
+                df.at[target_idx, "buyer_type"] = payload.buyer_type.strip()
+            df.at[target_idx, "email_status"] = "valid"
+            df.at[target_idx, "valid"] = "True"
+            df.to_csv(BUYERS_CSV, index=False)
+            
+            updated_lead = df.iloc[target_idx].to_dict()
+            return {
+                "success": True,
+                "message": "Buyer information updated.",
+                "lead": updated_lead
+            }
+        else:
+            new_row = {
+                "buyer_name": payload.buyer_name.strip(),
+                "company_name": payload.company_name.strip(),
+                "email": payload.email.strip(),
+                "website": payload.website or "",
+                "country": payload.country or "International",
+                "buyer_type": payload.buyer_type or "Distributor",
+                "email_status": "valid",
+                "valid": "True",
+                "is_duplicate": "False",
+                "source": "Manual Entry"
+            }
+            df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
+            df.to_csv(BUYERS_CSV, index=False)
+            return {
+                "success": True,
+                "message": "Buyer information updated.",
+                "lead": new_row
+            }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to update buyer: {str(e)}")
+
 
 @app.post("/api/search")
 async def discover_buyers_endpoint(payload: SearchRequest):
@@ -479,6 +715,16 @@ async def run_classification(payload: Optional[ClassifyRequest] = None):
 # ==========================================
 @app.post("/api/send")
 async def send_campaign(payload: SendCampaignRequest):
+    # Block demo data from receiving live outreach
+    if payload.audience.lower() == "demo" or (payload.custom_email and "-demo." in payload.custom_email.lower()):
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "error": "DEMO_DATA_OUTREACH_BLOCKED",
+                "message": "Demo data cannot be sent live outreach."
+            }
+        )
+
     custom_recipient = None
     if payload.audience.lower() == "custom":
         if not payload.custom_email:

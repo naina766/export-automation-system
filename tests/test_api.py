@@ -215,3 +215,55 @@ def test_test_search_connection_endpoint():
     if response.status_code == 200:
         assert response.json()["success"] is True
 
+def test_sample_buyers_endpoint():
+    response = client.get("/api/sample-buyers")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["success"] is True
+    assert data["is_demo"] is True
+    assert len(data["buyers"]) > 0
+    for b in data["buyers"]:
+        assert b["is_demo"] is True
+
+def test_demo_outreach_blocked():
+    response = client.post("/api/send", json={
+        "audience": "demo",
+        "subject": "Test",
+        "body": "Hello"
+    })
+    assert response.status_code == 422
+    assert "DEMO_DATA_OUTREACH_BLOCKED" in str(response.json())
+
+    response_custom_demo = client.post("/api/send", json={
+        "audience": "custom",
+        "custom_email": "test@partner-demo.com",
+        "subject": "Test",
+        "body": "Hello"
+    })
+    assert response_custom_demo.status_code == 422
+    assert "DEMO_DATA_OUTREACH_BLOCKED" in str(response_custom_demo.json())
+
+def test_lead_update_endpoint():
+    response = client.post("/api/leads/update", json={
+        "original_company": "Test Nonexistent Company",
+        "company_name": "Acme Global Imports",
+        "buyer_name": "Jane Doe",
+        "email": "jane@acme-global-test.com",
+        "website": "https://acme-global-test.com",
+        "country": "Germany",
+        "buyer_type": "Wholesaler"
+    })
+    assert response.status_code == 200
+    data = response.json()
+    assert data["success"] is True
+    assert data["message"] == "Buyer information updated."
+
+def test_lead_update_invalid_email():
+    response = client.post("/api/leads/update", json={
+        "company_name": "Acme",
+        "buyer_name": "Jane",
+        "email": "not-an-email",
+        "country": "Germany"
+    })
+    assert response.status_code == 422
+

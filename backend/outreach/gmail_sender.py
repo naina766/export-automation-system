@@ -119,6 +119,12 @@ class EmailSender:
             if df.empty:
                 return []
 
+            # Exclude demo records from entering any campaign
+            if "is_demo" in df.columns:
+                df = df[df["is_demo"].astype(str).str.lower() != "true"]
+            if "email" in df.columns:
+                df = df[~df["email"].astype(str).str.lower().str.contains("-demo.")]
+
             # Filter valid, non-duplicate emails
             valid_mask = (df.get("email_status", "valid") == "valid") & \
                          (df.get("is_duplicate", "False").astype(str).str.lower() != "true")
@@ -236,6 +242,10 @@ class EmailSender:
             "previews": [],
             "messages": []
         }
+
+        if audience == "demo":
+            results["messages"].append("Demo data cannot be sent live outreach.")
+            return results
 
         if not recipients:
             results["messages"].append(f"No qualified recipients found for target '{audience}'.")

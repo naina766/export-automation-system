@@ -26,7 +26,7 @@
     "email_subject_template": "Export Supply Partnership: {{product_name}} for {{company_name}}",
     "email_body_template": "Hello {{contact_name}},\n\nI am reaching out regarding {{company_name}} in {{country}}.\n\nAs a premier direct exporter of authentic {{product_name}}, we partner with leading wellness distributors and specialty retailers across {{country}}.\n\nWe would welcome the opportunity to supply your organization with export-grade inventory directly from our artisans.\n\nPlease find our catalog and B2B pricing schedule attached.\n\nBest regards,\nExport Sales Team",
     "catalog_path": "assets/company_presentation.pdf",
-    "active": true
+    "active": false
   },
   {
     "id": "tibetan-singing-bowls",
@@ -54,7 +54,7 @@
     "email_subject_template": "B2B Export Inquiry: Authentic {{product_name}} for {{company_name}}",
     "email_body_template": "Hello {{contact_name}},\n\nWe noticed {{company_name}}'s focus on mindfulness and wellness products in {{country}}.\n\nOur workshop exports certified authentic {{product_name}} crafted using traditional alloy compositions. We offer reliable international freight and competitive distributor tiers.\n\nAttached is our current catalog for your review.\n\nWarm regards,\nInternational Trade Department",
     "catalog_path": "assets/company_presentation.pdf",
-    "active": false
+    "active": true
   },
   {
     "id": "crystal-singing-bowls",

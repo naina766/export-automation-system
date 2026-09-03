@@ -73,6 +73,10 @@ class ReportGenerator:
         if BUYERS_CSV.exists():
             try:
                 df = pd.read_csv(BUYERS_CSV, dtype=str).fillna("")
+                if "is_demo" in df.columns:
+                    df = df[df["is_demo"].astype(str).str.lower() != "true"]
+                if "email" in df.columns:
+                    df = df[~df["email"].astype(str).str.lower().str.contains("-demo.")]
                 if product_id and "product_id" in df.columns:
                     df = df[df["product_id"] == product_id]
                 total_count = len(df)
