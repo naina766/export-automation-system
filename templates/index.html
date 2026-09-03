@@ -1,0 +1,140 @@
+{% extends "base.html" %}
+
+{% block content %}
+<!-- Pipeline Flow Bar -->
+<div class="pipeline-flow">
+  <div class="flow-step">
+    <div class="flow-num">1</div>
+    <div class="flow-text">Upload / Ingest</div>
+  </div>
+  <div class="flow-arrow">→</div>
+  <div class="flow-step">
+    <div class="flow-num">2</div>
+    <div class="flow-text">Validate & Deduplicate</div>
+  </div>
+  <div class="flow-arrow">→</div>
+  <div class="flow-step">
+    <div class="flow-num">3</div>
+    <div class="flow-text">Gemini Classification</div>
+  </div>
+  <div class="flow-arrow">→</div>
+  <div class="flow-step">
+    <div class="flow-num">4</div>
+    <div class="flow-text">Safe Dispatch</div>
+  </div>
+  <div class="flow-arrow">→</div>
+  <div class="flow-step">
+    <div class="flow-num">5</div>
+    <div class="flow-text">Campaign Reports</div>
+  </div>
+</div>
+
+<!-- KPI Cards -->
+<div class="stats-grid">
+  <div class="stat-card">
+    <div class="stat-label">Total Buyers</div>
+    <div class="stat-value" style="color: #60a5fa;">{{ metrics.total_buyers }}</div>
+    <div class="stat-subtext">Total imported leads</div>
+  </div>
+
+  <div class="stat-card">
+    <div class="stat-label">Valid Emails</div>
+    <div class="stat-value" style="color: #34d399;">{{ metrics.valid_emails }}</div>
+    <div class="stat-subtext">{{ metrics.invalid_emails }} invalid / {{ metrics.missing_emails }} missing</div>
+  </div>
+
+  <div class="stat-card">
+    <div class="stat-label">Business Contacts</div>
+    <div class="stat-value" style="color: #38bdf8;">{{ metrics.business_contacts }}</div>
+    <div class="stat-subtext">B2B Wholesalers & Studios</div>
+  </div>
+
+  <div class="stat-card">
+    <div class="stat-label">Individual Contacts</div>
+    <div class="stat-value" style="color: #c084fc;">{{ metrics.individual_contacts }}</div>
+    <div class="stat-subtext">Personal & Retail buyers</div>
+  </div>
+
+  <div class="stat-card">
+    <div class="stat-label">Emails Sent</div>
+    <div class="stat-value" style="color: #10b981;">{{ metrics.successful_sends }}</div>
+    <div class="stat-subtext">{{ metrics.success_rate }}% delivery success</div>
+  </div>
+
+  <div class="stat-card">
+    <div class="stat-label">Failed / Skipped</div>
+    <div class="stat-value" style="color: #fb7185;">{{ metrics.failed_sends }}</div>
+    <div class="stat-subtext">{{ metrics.duplicates_skipped }} duplicate skipped</div>
+  </div>
+</div>
+
+<!-- Quick Action Banners -->
+<div style="display: grid; grid-template-columns: 2fr 1fr; gap: 24px; margin-bottom: 24px;">
+  <div class="card" style="margin-bottom: 0;">
+    <div class="card-header">
+      <h2>🚀 Pipeline Quick Actions</h2>
+    </div>
+    <div style="display: flex; gap: 12px; flex-wrap: wrap;">
+      <a href="/upload" class="btn btn-primary">📥 Upload New Leads</a>
+      <a href="/classify" class="btn btn-secondary">🤖 Run Classification</a>
+      <a href="/send" class="btn btn-success">✉️ Send Campaign</a>
+      <a href="/report" class="btn btn-secondary">📈 View Full Report</a>
+    </div>
+  </div>
+
+  <div class="card" style="margin-bottom: 0;">
+    <div class="card-header">
+      <h2>🛡️ Engine Status</h2>
+    </div>
+    <div style="font-size: 0.875rem;">
+      <div style="margin-bottom: 8px;">
+        AI Engine: <span class="badge {{ 'badge-valid' if gemini_active else 'badge-missing' }}">{{ "Gemini 1.5 API" if gemini_active else "Demo Heuristics" }}</span>
+      </div>
+      <div>
+        Email Dispatch: <span class="badge {{ 'badge-valid' if email_mode == 'smtp' else 'badge-individual' }}">{{ email_mode | upper }}</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Recent Send Activity Table -->
+<div class="card">
+  <div class="card-header">
+    <h2>📋 Recent Outreach Activity</h2>
+    <a href="/report" class="btn btn-secondary" style="font-size: 0.75rem; padding: 6px 12px;">All Activity</a>
+  </div>
+
+  {% if metrics.recent_logs %}
+  <div class="table-responsive">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Recipient</th>
+          <th>Buyer / Company</th>
+          <th>Timestamp</th>
+          <th>Status</th>
+          <th>Campaign</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for log in metrics.recent_logs[:7] %}
+        <tr>
+          <td><b>{{ log.email_address }}</b></td>
+          <td>{{ log.buyer_name }} {% if log.company_name %}({{ log.company_name }}){% endif %}</td>
+          <td>{{ log.timestamp }}</td>
+          <td><span class="badge badge-{{ log.status }}">{{ log.status }}</span></td>
+          <td>{{ log.campaign }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="empty-state">
+    <div class="empty-state-icon">📭</div>
+    <h3>No campaign dispatches recorded yet</h3>
+    <p style="margin-top: 6px;">Upload leads and start your first Singing Bowls export campaign.</p>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,169 @@
+{% extends "base.html" %}
+
+{% block content %}
+{% if alert_message %}
+<div class="alert alert-{{ alert_type if alert_type else 'info' }}">
+  {{ alert_message }}
+</div>
+{% endif %}
+
+<!-- Safety Notice Banner -->
+<div class="alert {{ 'alert-success' if email_mode == 'smtp' else 'alert-info' }}">
+  <div>
+    {% if email_mode == 'smtp' %}
+      <b>🔒 LIVE SMTP MODE ACTIVE:</b> Real emails will be dispatched via Gmail SMTP (<code>{{ gmail_user }}</code>).
+    {% else %}
+      <b>🛡️ SAFE DEMO MODE ACTIVE:</b> Emails will be simulated and logged to <code>data/sent_log.csv</code> without contacting real mailboxes.
+    {% endif %}
+  </div>
+</div>
+
+<div style="display: grid; grid-template-columns: 1.1fr 0.9fr; gap: 24px; margin-bottom: 24px;">
+  <!-- Campaign Composition Form -->
+  <div class="card">
+    <div class="card-header">
+      <h2>✉️ Compose Export Outreach Campaign</h2>
+    </div>
+
+    <form action="/send" method="post">
+      <div class="form-group">
+        <label class="form-label" for="audience">Target Audience</label>
+        <select name="audience" id="audience" class="form-control">
+          <option value="business" {% if selected_audience == 'business' %}selected{% endif %}>🏢 Business Contacts Only (B2B)</option>
+          <option value="individual" {% if selected_audience == 'individual' %}selected{% endif %}>👤 Individual Contacts Only</option>
+          <option value="all" {% if selected_audience == 'all' %}selected{% endif %}>🌐 All Qualified Contacts</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="subject">Email Subject Line</label>
+        <input type="text" name="subject" id="subject" class="form-control" value="{{ subject if subject else 'Wholesale Singing Bowls Catalog & Export Partnership' }}" required>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="body_template">
+          Email Body Template 
+          <span style="font-weight: normal; color: var(--text-muted); font-size: 0.78rem;">(Supports <code>&#123;&#123;buyer_name&#125;&#125;</code> and <code>&#123;&#123;company_name&#125;&#125;</code>)</span>
+        </label>
+        <textarea name="body_template" id="body_template" class="form-control" rows="8" required>{{ body_template if body_template else 'Hello {{buyer_name}},
+
+We are an export company specializing in authentic, handcrafted Himalayan Singing Bowls and sound healing instruments.
+
+We would be pleased to explore a potential export partnership with {{company_name}}.
+
+Please find our product catalog and export specifications attached.
+
+Best regards,
+Export Sales Team
+Himalayan Artisans Export Ltd.' }}</textarea>
+      </div>
+
+      <div class="form-group">
+        <label class="form-checkbox">
+          <input type="checkbox" name="attach_presentation" value="true" {% if attach_presentation is not defined or attach_presentation %}checked{% endif %}>
+          <span>Attach Company Presentation (<code>assets/company_presentation.pdf</code>)</span>
+        </label>
+        {% if not presentation_exists %}
+        <div style="font-size: 0.8rem; color: #fb7185; margin-top: 4px;">
+          ⚠️ Warning: <code>assets/company_presentation.pdf</code> was not found. Emails will send without attachment unless generated.
+        </div>
+        {% endif %}
+      </div>
+
+      <button type="submit" class="btn btn-primary" style="width: 100%; padding: 12px;">
+        🚀 Launch {{ "Real SMTP Dispatch" if email_mode == 'smtp' else "Simulated Demo Send" }}
+      </button>
+    </form>
+  </div>
+
+  <!-- Campaign Context & Audience Breakdown -->
+  <div>
+    <div class="card">
+      <div class="card-header">
+        <h2>👥 Available Audience Pools</h2>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 12px; font-size: 0.875rem;">
+        <div style="display: flex; justify-content: space-between; padding: 10px; background: var(--bg-card-subtle); border-radius: var(--radius-md);">
+          <span>🏢 Business Contacts:</span>
+          <b style="color: #38bdf8;">{{ audience_counts.business }} leads</b>
+        </div>
+        <div style="display: flex; justify-content: space-between; padding: 10px; background: var(--bg-card-subtle); border-radius: var(--radius-md);">
+          <span>👤 Individual Contacts:</span>
+          <b style="color: #c084fc;">{{ audience_counts.individual }} leads</b>
+        </div>
+        <div style="display: flex; justify-content: space-between; padding: 10px; background: var(--bg-card-subtle); border-radius: var(--radius-md);">
+          <span>🌐 Total Qualified in Store:</span>
+          <b style="color: #34d399;">{{ audience_counts.all }} leads</b>
+        </div>
+      </div>
+      <div style="margin-top: 16px; font-size: 0.8rem; color: var(--text-muted);">
+        * Duplicate emails and leads already recorded in <code>sent_log.csv</code> are automatically skipped to prevent double-contacting.
+      </div>
+    </div>
+
+    <!-- Personalization Preview Card -->
+    <div class="card">
+      <div class="card-header">
+        <h2>✨ Personalization Variables</h2>
+      </div>
+      <p style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 10px;">
+        Placeholders are dynamically replaced with each lead's data:
+      </p>
+      <ul style="font-size: 0.85rem; color: var(--text-secondary); padding-left: 20px; line-height: 1.8;">
+        <li><code>&#123;&#123;buyer_name&#125;&#125;</code> → e.g. "Sarah Miller"</li>
+        <li><code>&#123;&#123;company_name&#125;&#125;</code> → e.g. "Himalayan Wellness LLC"</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- Send Results / Simulated Dispatch Previews -->
+{% if send_results %}
+<div class="card">
+  <div class="card-header">
+    <h2>📬 Outreach Dispatch Results</h2>
+    <a href="/report" class="btn btn-secondary" style="font-size: 0.8rem;">View Full Analytics →</a>
+  </div>
+
+  <div class="stats-grid" style="margin-bottom: 20px;">
+    <div class="stat-card">
+      <div class="stat-label">Targeted</div>
+      <div class="stat-value">{{ send_results.total_targeted }}</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Dispatched</div>
+      <div class="stat-value" style="color: #34d399;">{{ send_results.sent_count }}</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Duplicates Skipped</div>
+      <div class="stat-value" style="color: #fbbf24;">{{ send_results.skipped_duplicates }}</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Failed</div>
+      <div class="stat-value" style="color: #fb7185;">{{ send_results.failed_count }}</div>
+    </div>
+  </div>
+
+  {% if send_results.previews %}
+  <h3 style="font-size: 1rem; margin-bottom: 12px; color: #fff;">Generated Email Previews</h3>
+  <div style="display: flex; flex-direction: column; gap: 14px;">
+    {% for p in send_results.previews %}
+    <div style="background: var(--bg-card-subtle); border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 16px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+        <div>
+          <b>To:</b> <code>{{ p.recipient }}</code> ({{ p.buyer_name }}{% if p.company_name %}, {{ p.company_name }}{% endif %})
+        </div>
+        <span class="badge badge-valid">{{ p.status }}</span>
+      </div>
+      <div style="font-size: 0.85rem; color: #93c5fd; margin-bottom: 6px;"><b>Subject:</b> {{ p.subject }}</div>
+      <pre style="background: rgba(0,0,0,0.3); padding: 12px; border-radius: var(--radius-sm); font-family: inherit; font-size: 0.85rem; color: #e2e8f0; white-space: pre-wrap;">{{ p.body }}</pre>
+      <div style="margin-top: 6px; font-size: 0.75rem; color: var(--text-muted);">
+        📎 Attachment: {{ p.attachment }}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+{% endblock %}

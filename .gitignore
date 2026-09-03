@@ -1,0 +1,17 @@
+.env
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.venv/
+venv/
+data/buyers.csv
+data/business_emails.csv
+data/individual_emails.csv
+data/sent_log.csv
+!data/demo_buyers.csv
+!data/settings.json
+node_modules/
+frontend/node_modules/
+frontend/dist/
+.vite/

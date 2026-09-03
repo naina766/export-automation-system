@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+
+{% block content %}
+{% if alert_message %}
+<div class="alert alert-{{ alert_type if alert_type else 'info' }}">
+  {{ alert_message }}
+</div>
+{% endif %}
+
+<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 24px;">
+  <!-- Upload Box -->
+  <div class="card">
+    <div class="card-header">
+      <h2>📤 Upload Buyer Leads CSV</h2>
+    </div>
+
+    <form action="/upload" method="post" enctype="multipart/form-data">
+      <div class="upload-dropzone" id="csv-dropzone">
+        <div class="upload-icon">📁</div>
+        <p style="font-weight: 600; margin-bottom: 4px;">Click or Drag & Drop CSV file here</p>
+        <p style="font-size: 0.8rem; color: var(--text-muted);">Accepted format: .csv</p>
+        <div id="selected-file-name" style="margin-top: 10px; font-weight: 600; color: var(--accent-blue);"></div>
+        <input type="file" name="file" id="csv-file-input" accept=".csv" style="display: none;" required>
+      </div>
+
+      <div style="margin-top: 18px; display: flex; justify-content: space-between; align-items: center;">
+        <button type="submit" class="btn btn-primary">Process & Ingest CSV</button>
+        <button type="button" class="btn btn-secondary" id="load-demo-data-btn">⚡ Load Demo Buyers CSV</button>
+      </div>
+    </form>
+  </div>
+
+  <!-- Format Guide & Stats -->
+  <div class="card">
+    <div class="card-header">
+      <h2>📋 Expected CSV Schema</h2>
+    </div>
+    <p style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 12px;">
+      The pipeline accepts standard or aliased headers (e.g. <code>name</code>, <code>company</code>, <code>email</code>, <code>website</code>, <code>country</code>, <code>source</code>):
+    </p>
+
+    <div style="background: var(--bg-card-subtle); padding: 12px; border-radius: var(--radius-md); font-family: monospace; font-size: 0.8rem; color: #93c5fd; overflow-x: auto;">
+      buyer_name,company_name,email,website,country,source_platform<br>
+      Sarah Miller,Himalayan Wellness,sarah@wellness.example,https://wellness.example,USA,Google<br>
+      David Kumar,Zen Imports,david@zenimports.example,https://zenimports.example,UK,LinkedIn
+    </div>
+
+    {% if upload_stats %}
+    <div style="margin-top: 18px; border-top: 1px solid var(--border-color); padding-top: 14px;">
+      <h3 style="font-size: 0.95rem; margin-bottom: 8px;">Upload Batch Summary</h3>
+      <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; font-size: 0.85rem;">
+        <div>Total Rows: <b>{{ upload_stats.total_records }}</b></div>
+        <div>Valid Emails: <b style="color: #34d399;">{{ upload_stats.valid_emails }}</b></div>
+        <div>Invalid Emails: <b style="color: #fb7185;">{{ upload_stats.invalid_emails }}</b></div>
+        <div>Duplicates Removed: <b style="color: #fbbf24;">{{ upload_stats.duplicates_removed }}</b></div>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Imported Leads Table Preview -->
+<div class="card">
+  <div class="card-header">
+    <h2>👥 Current Buyers Store (data/buyers.csv)</h2>
+    {% if buyers %}
+    <a href="/classify" class="btn btn-primary" style="font-size: 0.85rem;">Next: Classify Leads →</a>
+    {% endif %}
+  </div>
+
+  {% if buyers %}
+  <div class="table-responsive">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Buyer Name</th>
+          <th>Company Name</th>
+          <th>Email Address</th>
+          <th>Country</th>
+          <th>Source</th>
+          <th>Email Status</th>
+          <th>Deduplication</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for buyer in buyers %}
+        <tr>
+          <td>{{ loop.index }}</td>
+          <td><b>{{ buyer.buyer_name if buyer.buyer_name else "—" }}</b></td>
+          <td>{{ buyer.company_name if buyer.company_name else "—" }}</td>
+          <td><code>{{ buyer.email if buyer.email else "(Missing)" }}</code></td>
+          <td>{{ buyer.country if buyer.country else "—" }}</td>
+          <td><span class="badge" style="background: rgba(255,255,255,0.06);">{{ buyer.source_platform if buyer.source_platform else "Direct" }}</span></td>
+          <td><span class="badge badge-{{ buyer.email_status }}">{{ buyer.email_status }}</span></td>
+          <td>
+            {% if buyer.is_duplicate == 'True' or buyer.is_duplicate == True %}
+              <span class="badge badge-invalid">Duplicate</span>
+            {% elif buyer.already_contacted == 'True' or buyer.already_contacted == True %}
+              <span class="badge badge-missing">Already Contacted</span>
+            {% else %}
+              <span class="badge badge-valid">Ready</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="empty-state">
+    <div class="empty-state-icon">📥</div>
+    <h3>No buyers currently loaded</h3>
+    <p>Upload a CSV file or click "Load Demo Buyers CSV" to populate leads.</p>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

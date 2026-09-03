@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ title if title else "EXPORT Automation System" }} | Singing Bowls Platform</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+  <div class="app-container">
+    <!-- Sidebar Navigation -->
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <div class="logo-badge">SB</div>
+        <div class="logo-text">
+          <h1>EXPORT AUTO</h1>
+          <span>Singing Bowls</span>
+        </div>
+      </div>
+
+      <nav class="sidebar-nav">
+        <a href="/" class="nav-link {{ 'active' if active_page == 'dashboard' else '' }}">
+          <span>📊</span> Dashboard
+        </a>
+        <a href="/upload" class="nav-link {{ 'active' if active_page == 'upload' else '' }}">
+          <span>📥</span> Upload Leads
+        </a>
+        <a href="/classify" class="nav-link {{ 'active' if active_page == 'classify' else '' }}">
+          <span>🤖</span> AI Classification
+        </a>
+        <a href="/send" class="nav-link {{ 'active' if active_page == 'send' else '' }}">
+          <span>✉️</span> Send Campaign
+        </a>
+        <a href="/report" class="nav-link {{ 'active' if active_page == 'report' else '' }}">
+          <span>📈</span> Reports
+        </a>
+        <a href="/settings" class="nav-link {{ 'active' if active_page == 'settings' else '' }}">
+          <span>⚙️</span> Settings
+        </a>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div>Email Engine:</div>
+        <div style="margin-top: 6px;">
+          <span class="mode-tag {{ 'smtp' if email_mode == 'smtp' else '' }}">
+            ● {{ email_mode | upper }} MODE
+          </span>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main Viewport -->
+    <div class="main-wrapper">
+      <header class="top-navbar">
+        <div class="page-title">{{ page_heading if page_heading else "Dashboard" }}</div>
+        <div>
+          <span style="font-size: 0.85rem; color: var(--text-secondary);">
+            Target Product: <b style="color: #fff;">{{ search_keyword if search_keyword else "Singing Bowls" }}</b>
+          </span>
+        </div>
+      </header>
+
+      <main class="content-body">
+        {% block content %}{% endblock %}
+      </main>
+    </div>
+  </div>
+
+  <script src="/static/js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+
+{% block content %}
+{% if alert_message %}
+<div class="alert alert-{{ alert_type if alert_type else 'info' }}">
+  {{ alert_message }}
+</div>
+{% endif %}
+
+<div style="display: grid; grid-template-columns: 1.1fr 0.9fr; gap: 24px;">
+  <!-- Settings Form -->
+  <div class="card">
+    <div class="card-header">
+      <h2>⚙️ System & Campaign Settings</h2>
+    </div>
+
+    <form action="/settings" method="post">
+      <div class="form-group">
+        <label class="form-label" for="search_keyword">Target Export Product / Keyword</label>
+        <input type="text" name="search_keyword" id="search_keyword" class="form-control" value="{{ settings.SEARCH_KEYWORD }}" required>
+        <small style="color: var(--text-muted); font-size: 0.78rem;">Used by lead discovery adapters & campaign headers.</small>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="daily_send_limit">Daily Send Limit (Per Campaign Batch)</label>
+        <input type="number" name="daily_send_limit" id="daily_send_limit" class="form-control" value="{{ settings.DAILY_SEND_LIMIT }}" min="1" max="500" required>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="send_delay">Send Delay Between Emails (Seconds)</label>
+        <input type="number" name="send_delay" id="send_delay" class="form-control" value="{{ settings.SEND_DELAY }}" min="0" max="60" required>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="email_mode">Email Dispatch Mode</label>
+        <select name="email_mode" id="email_mode" class="form-control">
+          <option value="demo" {% if settings.EMAIL_MODE == 'demo' %}selected{% endif %}>🛡️ Demo Mode (Safe Simulated Dispatch)</option>
+          <option value="smtp" {% if settings.EMAIL_MODE == 'smtp' %}selected{% endif %}>🔒 Gmail SMTP Mode (Live Outbox)</option>
+        </select>
+        <small style="color: var(--text-muted); font-size: 0.78rem;">In Demo mode, emails are simulated and recorded safely to <code>sent_log.csv</code> without contacting real inboxes.</small>
+      </div>
+
+      <button type="submit" class="btn btn-primary" style="margin-top: 10px;">💾 Save Settings</button>
+    </form>
+  </div>
+
+  <!-- Security & Secrets Overview -->
+  <div>
+    <div class="card">
+      <div class="card-header">
+        <h2>🔐 Credential Security Status (.env)</h2>
+      </div>
+
+      <p style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 16px;">
+        Sensitive secrets and passwords remain protected in <code>.env</code> and are never persisted in JSON files or exposed in the UI.
+      </p>
+
+      <div style="display: flex; flex-direction: column; gap: 12px; font-size: 0.875rem;">
+        <div style="padding: 12px; background: var(--bg-card-subtle); border-radius: var(--radius-md); display: flex; justify-content: space-between; align-items: center;">
+          <div>
+            <b>Gemini API Key</b>
+            <div style="font-size: 0.75rem; color: var(--text-muted);">AI Lead Classification</div>
+          </div>
+          <span class="badge {{ 'badge-valid' if gemini_configured else 'badge-missing' }}">
+            {{ "CONFIGURED" if gemini_configured else "NOT SET (Demo Mode Active)" }}
+          </span>
+        </div>
+
+        <div style="padding: 12px; background: var(--bg-card-subtle); border-radius: var(--radius-md); display: flex; justify-content: space-between; align-items: center;">
+          <div>
+            <b>Gmail SMTP Credentials</b>
+            <div style="font-size: 0.75rem; color: var(--text-muted);">{{ masked_gmail if masked_gmail else "GMAIL_EMAIL & App Password" }}</div>
+          </div>
+          <span class="badge {{ 'badge-valid' if gmail_configured else 'badge-missing' }}">
+            {{ "CONFIGURED" if gmail_configured else "NOT SET (Safe Demo)" }}
+          </span>
+        </div>
+      </div>
+
+      <div style="margin-top: 18px; font-size: 0.8rem; color: var(--text-muted); border-top: 1px solid var(--border-color); padding-top: 12px;">
+        To configure live credentials, edit the local <code>.env</code> file:
+        <pre style="background: rgba(0,0,0,0.3); padding: 8px; border-radius: var(--radius-sm); margin-top: 6px; color: #93c5fd;">GEMINI_API_KEY=your_key_here
+GMAIL_EMAIL=your_email@gmail.com
+GMAIL_APP_PASSWORD=your_16_char_app_password</pre>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
