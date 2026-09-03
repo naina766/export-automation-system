@@ -26,7 +26,8 @@ class BuyerSearchProvider(ABC):
         country: Optional[str] = None,
         buyer_type: Optional[str] = None,
         keywords: Optional[Union[str, List[str]]] = None,
-        limit: int = 10
+        limit: int = 10,
+        product_id: Optional[str] = None
     ) -> List[Dict[str, Any]]:
         """
         Execute search query against external provider API and return normalized buyer records.

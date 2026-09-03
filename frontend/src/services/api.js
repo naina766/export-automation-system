@@ -17,15 +17,43 @@ export const apiService = {
     return res.data;
   },
 
+  // Products Catalog API
+  getProducts: async () => {
+    const res = await apiClient.get('/products');
+    return res.data;
+  },
+
+  createProduct: async (productData) => {
+    const res = await apiClient.post('/products', productData);
+    return res.data;
+  },
+
+  updateProduct: async (id, productData) => {
+    const res = await apiClient.put(`/products/${id}`, productData);
+    return res.data;
+  },
+
+  deleteProduct: async (id) => {
+    const res = await apiClient.delete(`/products/${id}`);
+    return res.data;
+  },
+
+  activateProduct: async (id) => {
+    const res = await apiClient.post(`/products/${id}/activate`);
+    return res.data;
+  },
+
   // Dashboard
-  getDashboard: async () => {
-    const res = await apiClient.get('/dashboard');
+  getDashboard: async (productId = null) => {
+    const url = productId ? `/dashboard?product_id=${encodeURIComponent(productId)}` : '/dashboard';
+    const res = await apiClient.get(url);
     return res.data;
   },
 
   // Leads
-  getLeads: async () => {
-    const res = await apiClient.get('/leads');
+  getLeads: async (productId = null) => {
+    const url = productId ? `/leads?product_id=${encodeURIComponent(productId)}` : '/leads';
+    const res = await apiClient.get(url);
     return res.data;
   },
 
@@ -59,13 +87,14 @@ export const apiService = {
   },
 
   // Classification
-  getClassification: async () => {
-    const res = await apiClient.get('/classification');
+  getClassification: async (productId = null) => {
+    const url = productId ? `/classification?product_id=${encodeURIComponent(productId)}` : '/classification';
+    const res = await apiClient.get(url);
     return res.data;
   },
 
-  classifyLeads: async () => {
-    const res = await apiClient.post('/classify');
+  classifyLeads: async (payload = null) => {
+    const res = await apiClient.post('/classify', payload || {});
     return res.data;
   },
 
@@ -75,14 +104,20 @@ export const apiService = {
     return res.data;
   },
 
+  sendTestEmail: async (payload) => {
+    const res = await apiClient.post('/send/test', payload);
+    return res.data;
+  },
+
   // Activity & Reports
   getActivity: async (limit = 100) => {
     const res = await apiClient.get(`/activity?limit=${limit}`);
     return res.data;
   },
 
-  getReport: async () => {
-    const res = await apiClient.get('/report');
+  getReport: async (productId = null) => {
+    const url = productId ? `/report?product_id=${encodeURIComponent(productId)}` : '/report';
+    const res = await apiClient.get(url);
     return res.data;
   },
 
@@ -102,7 +137,7 @@ export const apiService = {
   // Catalog URL for in-browser PDF preview / download
   getCatalogUrl: () => `${API_BASE_URL}/catalog`,
 
-  // Settings & SMTP Diagnostics
+  // Settings & Diagnostics
   getSettings: async () => {
     const res = await apiClient.get('/settings');
     return res.data;

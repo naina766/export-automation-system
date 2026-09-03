@@ -16,32 +16,46 @@ import {
   Lock,
   Clock,
   FileCheck,
-  ShieldAlert
+  ShieldAlert,
+  Package
 } from 'lucide-react';
 import apiService from '../services/api';
+import { useProduct } from '../context/ProductContext';
 import Notification from '../components/Notification';
 import StatusBadge from '../components/StatusBadge';
 import LoadingSpinner from '../components/LoadingSpinner';
 
-const DEFAULT_SUBJECT = "Export Partnership: Himalayan Singing Bowls for {{company_name}}";
+const DEFAULT_SUBJECT = "Export Supply Partnership: {{product_name}} for {{company_name}}";
 const DEFAULT_BODY = `Hello {{contact_name}},
 
 I am reaching out regarding {{company_name}} in {{country}}.
 
-As an established exporter of authentic, hand-hammered {{product}}, we would be delighted to explore a wholesale supply partnership with your organization.
+As an established direct exporter of authentic {{product_name}}, we would be delighted to explore a wholesale supply partnership with your organization.
 
-Please find our product catalog and export specifications attached.
+Please find our export catalog and specifications attached.
 
 Best regards,
-Export Sales Team
-Himalayan Artisans Export Ltd.`;
+Export Sales Team`;
 
 export const SendCampaign = () => {
   const navigate = useNavigate();
+  const { selectedProduct, setSelectedProduct, products } = useProduct();
   const [audience, setAudience] = useState('business');
-  const [subject, setSubject] = useState(DEFAULT_SUBJECT);
-  const [body, setBody] = useState(DEFAULT_BODY);
+  const [subject, setSubject] = useState(selectedProduct?.email_subject_template || DEFAULT_SUBJECT);
+  const [body, setBody] = useState(selectedProduct?.email_body_template || DEFAULT_BODY);
   const [attachPdf, setAttachPdf] = useState(true);
+
+  // Synchronize when selectedProduct updates
+  useEffect(() => {
+    if (selectedProduct) {
+      if (selectedProduct.email_subject_template) {
+        setSubject(selectedProduct.email_subject_template);
+      }
+      if (selectedProduct.email_body_template) {
+        setBody(selectedProduct.email_body_template);
+      }
+    }
+  }, [selectedProduct]);
 
   // Single test recipient state
   const [customRecipient, setCustomRecipient] = useState({
@@ -107,13 +121,16 @@ export const SendCampaign = () => {
     email: firstLead.email || 'partner@organization.com'
   };
 
+  const currentProductName = selectedProduct?.name || targetProduct;
+
   const previewSubject = subject
     .replace(/\{\{buyer_name\}\}/g, previewLead.name)
     .replace(/\{\{contact_name\}\}/g, previewLead.name)
     .replace(/\{\{company_name\}\}/g, previewLead.company)
     .replace(/\{\{country\}\}/g, previewLead.country)
     .replace(/\{\{buyer_type\}\}/g, previewLead.buyer_type)
-    .replace(/\{\{product\}\}/g, targetProduct);
+    .replace(/\{\{product_name\}\}/g, currentProductName)
+    .replace(/\{\{product\}\}/g, currentProductName);
 
   const previewBody = body
     .replace(/\{\{buyer_name\}\}/g, previewLead.name)
@@ -121,7 +138,8 @@ export const SendCampaign = () => {
     .replace(/\{\{company_name\}\}/g, previewLead.company)
     .replace(/\{\{country\}\}/g, previewLead.country)
     .replace(/\{\{buyer_type\}\}/g, previewLead.buyer_type)
-    .replace(/\{\{product\}\}/g, targetProduct);
+    .replace(/\{\{product_name\}\}/g, currentProductName)
+    .replace(/\{\{product\}\}/g, currentProductName);
 
   const handleOpenDispatchModal = () => {
     if (!gmailConfigured) {
@@ -150,6 +168,7 @@ export const SendCampaign = () => {
       setResults(null);
 
       const payload = {
+        product_id: selectedProduct?.id,
         audience,
         subject,
         body_template: body,

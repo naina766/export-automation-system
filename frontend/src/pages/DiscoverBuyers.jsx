@@ -17,9 +17,11 @@ import {
   Mail,
   User,
   Clock,
-  KeyRound
+  KeyRound,
+  Package
 } from 'lucide-react';
 import apiService from '../services/api';
+import { useProduct } from '../context/ProductContext';
 import Notification from '../components/Notification';
 import StatusBadge from '../components/StatusBadge';
 import LoadingSpinner from '../components/LoadingSpinner';
@@ -51,7 +53,8 @@ const BUYER_TYPES = [
 
 export const DiscoverBuyers = () => {
   const navigate = useNavigate();
-  const [product, setProduct] = useState('Himalayan Sound Healing Bowls');
+  const { selectedProduct, setSelectedProduct, products } = useProduct();
+  const [product, setProduct] = useState(selectedProduct?.name || 'Himalayan Sound Healing Bowls');
   const [country, setCountry] = useState('United States');
   const [buyerType, setBuyerType] = useState('Distributor');
   const [keywords, setKeywords] = useState('sound healing, meditation, wellness, singing bowls');
@@ -65,6 +68,22 @@ export const DiscoverBuyers = () => {
   const [searchStep, setSearchStep] = useState(1);
   const [notification, setNotification] = useState({ type: '', message: '' });
 
+  // Synchronize when selectedProduct updates
+  useEffect(() => {
+    if (selectedProduct) {
+      setProduct(selectedProduct.name);
+      if (selectedProduct.keywords && selectedProduct.keywords.length > 0) {
+        setKeywords(Array.isArray(selectedProduct.keywords) ? selectedProduct.keywords.join(', ') : selectedProduct.keywords);
+      }
+      if (selectedProduct.target_countries && selectedProduct.target_countries.length > 0) {
+        setCountry(selectedProduct.target_countries[0]);
+      }
+      if (selectedProduct.buyer_types && selectedProduct.buyer_types.length > 0) {
+        setBuyerType(selectedProduct.buyer_types[0]);
+      }
+    }
+  }, [selectedProduct]);
+
   const handleSearch = async (e) => {
     if (e) e.preventDefault();
     if (searching) return;
@@ -77,6 +96,7 @@ export const DiscoverBuyers = () => {
       setSearchStage('Searching live sources...');
 
       const payload = {
+        product_id: selectedProduct?.id,
         product,
         country: country === 'All Countries' ? '' : country,
         buyer_type: buyerType === 'All Buyer Types' ? '' : buyerType,
@@ -217,27 +237,33 @@ export const DiscoverBuyers = () => {
       )}
 
       {/* Search Configuration Grid */}
-      <form onSubmit={handleSearch} className="bg-[#131b2e] border border-[#222f4c] rounded-xl p-5 shadow-sm space-y-4">
-        <div className="flex items-center justify-between border-b border-[#222f4c] pb-3">
+      <form onSubmit={handleSearch} className="bg-[#0B1220] border border-[#1E293B] rounded-xl p-5 shadow-sm space-y-4">
+        <div className="flex items-center justify-between border-b border-[#1E293B] pb-3">
           <div className="flex items-center gap-2 text-xs font-bold text-slate-200 uppercase tracking-wider">
-            <Filter className="w-4 h-4 text-blue-400" />
-            <span>Targeting Criteria</span>
+            <Filter className="w-4 h-4 text-purple-400" />
+            <span>Live Search Targeting Criteria</span>
           </div>
-          <span className="text-[11px] text-slate-400">Target Product: <b>Singing Bowls</b></span>
+          <span className="text-[11px] text-slate-400">Target Export: <b className="text-purple-300">{selectedProduct?.name || 'All Products'}</b></span>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <div>
-            <label className="block text-[11px] font-semibold text-slate-300 mb-1">
-              Target Product
+            <label className="block text-[11px] font-semibold text-slate-300 mb-1 flex items-center justify-between">
+              <span>Export Product Line</span>
+              <span className="text-[10px] text-purple-400">Catalog</span>
             </label>
-            <input
-              type="text"
-              value={product}
-              onChange={(e) => setProduct(e.target.value)}
-              placeholder="e.g. Himalayan Sound Healing Bowls"
-              className="w-full px-3 py-2 rounded-lg bg-[#0b0f19] border border-[#222f4c] text-white text-xs focus:outline-none focus:border-blue-500"
-            />
+            <select
+              value={selectedProduct?.id || ''}
+              onChange={(e) => {
+                const found = products.find(p => p.id === e.target.value);
+                if (found) setSelectedProduct(found);
+              }}
+              className="w-full px-3 py-2 rounded-lg bg-[#050816] border border-[#1E293B] text-purple-300 font-semibold text-xs focus:outline-none focus:border-purple-500"
+            >
+              {products.map((p) => (
+                <option key={p.id} value={p.id}>{p.name}</option>
+              ))}
+            </select>
           </div>
 
           <div>

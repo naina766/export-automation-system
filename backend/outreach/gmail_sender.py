@@ -69,6 +69,7 @@ class EmailSender:
         text = text.replace("{{company_name}}", clean_company)
         text = text.replace("{{country}}", clean_country)
         text = text.replace("{{buyer_type}}", clean_type)
+        text = text.replace("{{product_name}}", clean_product)
         text = text.replace("{{product}}", clean_product)
 
         # Clean any stray unresolved double-brace tags
@@ -142,41 +143,41 @@ class EmailSender:
         smtp_user: str,
         smtp_pass: str,
         msg: MIMEMultipart,
-        max_retries: int = 3
+        max_retries: int = 3,
+        recipient: str = ""
     ) -> Tuple[bool, str]:
         """
-        Connects and dispatches email via Gmail SMTP with exponential backoff retries.
-        Retries on transient network/connection failures (delays: 1s, 2s, 4s).
+        Transmits email over TLS port 587 with exponential backoff on transient errors.
+        Attempt 1 -> wait 1s -> Attempt 2 -> wait 2s -> Attempt 3 -> wait 4s.
         """
         last_error = ""
+        backoff_delays = [1.0, 2.0, 4.0]
+
         for attempt in range(1, max_retries + 1):
-            server = None
             try:
-                server = smtplib.SMTP(smtp_host, smtp_port, timeout=12)
+                server = smtplib.SMTP(smtp_host, smtp_port, timeout=15.0)
+                server.ehlo()
                 server.starttls()
+                server.ehlo()
                 server.login(smtp_user, smtp_pass)
                 server.send_message(msg)
                 server.quit()
                 return True, "SENT"
-            except (smtplib.SMTPConnectError, smtplib.SMTPServerDisconnected, TimeoutError, OSError) as transient_err:
-                last_error = f"Transient connection error: {str(transient_err)}"
+            except smtplib.SMTPAuthenticationError as e:
+                return False, f"Gmail SMTP Authentication Error: {str(e)}"
+            except smtplib.SMTPRecipientsRefused as e:
+                return False, f"Recipient refused: {str(e)}"
+            except (smtplib.SMTPConnectError, smtplib.SMTPServerDisconnected, TimeoutError, ConnectionError) as e:
+                last_error = f"Network/Connection error (attempt {attempt}/{max_retries}): {str(e)}"
                 if attempt < max_retries:
-                    backoff_delay = 1 * (2 ** (attempt - 1)) # 1s, 2s, 4s
-                    time.sleep(backoff_delay)
-                else:
-                    last_error = f"Failed after {max_retries} attempts: {last_error}"
-            except (smtplib.SMTPAuthenticationError, smtplib.SMTPRecipientsRefused, smtplib.SMTPDataError) as permanent_err:
-                last_error = f"SMTP client error: {str(permanent_err)}"
-                break
+                    sleep_time = backoff_delays[min(attempt - 1, len(backoff_delays) - 1)]
+                    time.sleep(sleep_time)
             except Exception as e:
-                last_error = f"Unexpected SMTP error: {str(e)}"
-                break
-            finally:
-                if server:
-                    try:
-                        server.close()
-                    except Exception:
-                        pass
+                last_error = f"SMTP error (attempt {attempt}/{max_retries}): {str(e)}"
+                if attempt < max_retries:
+                    sleep_time = backoff_delays[min(attempt - 1, len(backoff_delays) - 1)]
+                    time.sleep(sleep_time)
+
         return False, last_error
 
     @classmethod
@@ -186,14 +187,38 @@ class EmailSender:
         subject: str = DEFAULT_SUBJECT,
         body_template: str = DEFAULT_BODY,
         attach_presentation: bool = True,
-        custom_recipient: Optional[Dict[str, str]] = None
+        custom_recipient: Optional[Dict[str, str]] = None,
+        product_id: Optional[str] = None,
+        campaign_id: Optional[str] = None,
+        product_name: Optional[str] = None
     ) -> Dict[str, Any]:
-        """Executes campaign outreach via Gmail SMTP with retry resilience."""
+        """Executes campaign outreach via Gmail SMTP with retry resilience and product awareness."""
+        from datetime import datetime
         settings = load_settings()
         max_emails = int(settings.get("MAX_EMAILS_PER_RUN", 25))
         send_delay = float(settings.get("SEND_DELAY", 1))
         smtp_host = settings.get("SMTP_HOST", "smtp.gmail.com")
         smtp_port = int(settings.get("SMTP_PORT", 587))
+
+        # Resolve active product
+        resolved_prod_id = product_id or "himalayan-sound-healing-bowls"
+        resolved_product = product_name or settings.get("SEARCH_KEYWORD", "Himalayan Sound Healing Bowls")
+        try:
+            from products.catalog import ProductCatalog
+            if product_id:
+                prod = ProductCatalog.get_product(product_id)
+                if prod:
+                    resolved_product = prod.get("name", resolved_product)
+                    resolved_prod_id = prod.get("id", resolved_prod_id)
+            else:
+                prod = ProductCatalog.get_active_product()
+                if prod:
+                    resolved_product = prod.get("name", resolved_product)
+                    resolved_prod_id = prod.get("id", resolved_prod_id)
+        except Exception:
+            pass
+
+        active_campaign_id = campaign_id or f"campaign_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
 
         recipients = cls.get_recipients_by_audience(audience, custom_recipient)
         contacted_set = EmailValidator.get_contacted_emails()
@@ -201,6 +226,9 @@ class EmailSender:
         results = {
             "mode": "SMTP",
             "audience": audience,
+            "campaign_id": active_campaign_id,
+            "product_id": resolved_prod_id,
+            "product_name": resolved_product,
             "total_targeted": len(recipients),
             "sent_count": 0,
             "failed_count": 0,
@@ -244,7 +272,7 @@ class EmailSender:
 
             is_test_send = (audience.lower() == "custom")
             dispatch_mode = "SMTP_TEST" if is_test_send else "SMTP"
-            campaign_name = "SMTP Test" if is_test_send else "Singing Bowls Outreach"
+            campaign_title = "SMTP Test" if is_test_send else f"{resolved_product} Outreach"
 
             # Syntax validation check for single/custom
             if audience == "custom":
@@ -258,8 +286,10 @@ class EmailSender:
                         status="INVALID_EMAIL",
                         mode=dispatch_mode,
                         classification="custom",
-                        campaign=campaign_name,
-                        error=err_msg
+                        campaign=campaign_title,
+                        error=err_msg,
+                        product_id=resolved_prod_id,
+                        campaign_id=active_campaign_id
                     )
                     results["failed_count"] += 1
                     results["messages"].append(err_msg)
@@ -274,21 +304,32 @@ class EmailSender:
                     status="SKIPPED_DUPLICATE",
                     mode=dispatch_mode,
                     classification=classification,
-                    campaign=campaign_name,
-                    error="Already contacted in a previous campaign"
+                    campaign=campaign_title,
+                    error="Already contacted in a previous campaign",
+                    product_id=resolved_prod_id,
+                    campaign_id=active_campaign_id
                 )
                 results["skipped_duplicates"] += 1
                 continue
 
             buyer_type = str(buyer.get("buyer_type", buyer.get("category", "Distributor"))).strip()
-            product_kw = str(settings.get("SEARCH_KEYWORD", "Himalayan Sound Healing Bowls")).strip()
 
-            # Personalize subject & body with fallbacks
+            # Personalize subject & body with product awareness
             personalized_subject = cls.personalize_text(
-                subject, buyer_name=buyer_name, company_name=company_name, country=country_val, buyer_type=buyer_type, product=product_kw
+                subject,
+                buyer_name=buyer_name,
+                company_name=company_name,
+                country=country_val,
+                buyer_type=buyer_type,
+                product=resolved_product
             )
             personalized_body = cls.personalize_text(
-                body_template, buyer_name=buyer_name, company_name=company_name, country=country_val, buyer_type=buyer_type, product=product_kw
+                body_template,
+                buyer_name=buyer_name,
+                company_name=company_name,
+                country=country_val,
+                buyer_type=buyer_type,
+                product=resolved_product
             )
 
             try:
@@ -309,7 +350,7 @@ class EmailSender:
                     smtp_user=smtp_user,
                     smtp_pass=smtp_pass,
                     msg=msg,
-                    max_retries=3
+                    recipient=raw_email
                 )
 
                 if success:
@@ -320,19 +361,12 @@ class EmailSender:
                         status="SENT",
                         mode=dispatch_mode,
                         classification=classification,
-                        campaign=campaign_name
+                        campaign=campaign_title,
+                        error="",
+                        product_id=resolved_prod_id,
+                        campaign_id=active_campaign_id
                     )
                     results["sent_count"] += 1
-                    results["previews"].append({
-                        "email": raw_email,
-                        "buyer_name": buyer_name,
-                        "company": company_name,
-                        "country": country_val,
-                        "subject": personalized_subject,
-                        "body": personalized_body,
-                        "attachment": "company_presentation.pdf" if attach_presentation else "None",
-                        "status": "SENT"
-                    })
                     contacted_set.add(raw_email)
                 else:
                     ActivityLogger.log_send_event(
@@ -342,25 +376,33 @@ class EmailSender:
                         status="FAILED",
                         mode=dispatch_mode,
                         classification=classification,
-                        campaign=campaign_name,
-                        error=smtp_msg
+                        campaign=campaign_title,
+                        error=smtp_msg,
+                        product_id=resolved_prod_id,
+                        campaign_id=active_campaign_id
                     )
                     results["failed_count"] += 1
-
-                if send_delay > 0 and idx < len(recipients_to_send) - 1:
-                    time.sleep(send_delay)
+                    results["messages"].append(f"{raw_email}: {smtp_msg}")
 
             except Exception as e:
-                error_msg = f"Unexpected error during send: {str(e)}"
+                err_str = str(e)
                 ActivityLogger.log_send_event(
                     buyer_name=buyer_name,
                     company=company_name,
                     email=raw_email,
                     status="FAILED",
-                    mode="SMTP",
+                    mode=dispatch_mode,
                     classification=classification,
-                    error=error_msg
+                    campaign=campaign_title,
+                    error=err_str,
+                    product_id=resolved_prod_id,
+                    campaign_id=active_campaign_id
                 )
                 results["failed_count"] += 1
+                results["messages"].append(f"{raw_email}: {err_str}")
+
+            # Safe inter-message delay
+            if idx < len(recipients_to_send) - 1 and send_delay > 0:
+                time.sleep(send_delay)
 
         return results

@@ -17,7 +17,9 @@ SENT_LOG_COLUMNS = [
     "mode",
     "status",
     "error",
-    "campaign"
+    "campaign",
+    "product_id",
+    "campaign_id"
 ]
 
 class ActivityLogger:
@@ -42,7 +44,9 @@ class ActivityLogger:
         mode: str = "SMTP",
         classification: str = "business",
         campaign: str = "Singing Bowls Outreach",
-        error: str = ""
+        error: str = "",
+        product_id: str = "",
+        campaign_id: str = ""
     ) -> Dict[str, Any]:
         """
         Record a campaign send event.
@@ -59,11 +63,13 @@ class ActivityLogger:
             "mode": str(mode).upper(),
             "status": str(status).upper(),
             "error": str(error).strip(),
-            "campaign": str(campaign).strip()
+            "campaign": str(campaign).strip(),
+            "product_id": str(product_id).strip(),
+            "campaign_id": str(campaign_id).strip()
         }
 
         with open(SENT_LOG_CSV, "a", newline="", encoding="utf-8") as f:
-            writer = csv.DictWriter(f, fieldnames=SENT_LOG_COLUMNS)
+            writer = csv.DictWriter(f, fieldnames=SENT_LOG_COLUMNS, extrasaction="ignore")
             writer.writerow(entry)
 
         return entry

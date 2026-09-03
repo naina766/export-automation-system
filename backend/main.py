@@ -61,27 +61,66 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+from products.catalog import ProductCatalog
+
 ActivityLogger.ensure_log_file()
 
 # Pydantic Models
+class ProductCreateRequest(BaseModel):
+    id: Optional[str] = None
+    name: str
+    description: Optional[str] = ""
+    keywords: Optional[Any] = None # List[str] or str
+    buyer_types: Optional[Any] = None # List[str] or str
+    target_countries: Optional[Any] = None # List[str] or str
+    email_subject_template: Optional[str] = None
+    email_body_template: Optional[str] = None
+    catalog_path: Optional[str] = "assets/company_presentation.pdf"
+    active: Optional[bool] = False
+
+class ProductUpdateRequest(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    keywords: Optional[Any] = None
+    buyer_types: Optional[Any] = None
+    target_countries: Optional[Any] = None
+    email_subject_template: Optional[str] = None
+    email_body_template: Optional[str] = None
+    catalog_path: Optional[str] = None
+    active: Optional[bool] = None
+
 class SearchRequest(BaseModel):
-    product: Optional[str] = Field(default="Himalayan Sound Healing Bowls")
+    product_id: Optional[str] = Field(default=None)
+    product: Optional[str] = Field(default=None)
     country: Optional[str] = Field(default=None)
     buyer_type: Optional[str] = Field(default=None)
     keywords: Optional[Any] = Field(default=None) # str or List[str]
-    limit: Optional[int] = Field(default=10)
+    limit: Optional[int] = Field(default=25)
     auto_ingest: Optional[bool] = Field(default=True)
 
 class SendCampaignRequest(BaseModel):
+    product_id: Optional[str] = Field(default=None)
+    campaign_id: Optional[str] = Field(default=None)
     audience: str = Field(default="business") # business | individual | all | custom
-    subject: str = Field(default=DEFAULT_SUBJECT)
-    body_template: str = Field(default=DEFAULT_BODY)
+    subject: Optional[str] = Field(default=None)
+    body_template: Optional[str] = Field(default=None)
     attach_presentation: bool = Field(default=True)
     custom_email: Optional[str] = None
     custom_buyer_name: Optional[str] = None
     custom_company_name: Optional[str] = None
     custom_country: Optional[str] = None
     custom_buyer_type: Optional[str] = None
+
+class TestEmailRequest(BaseModel):
+    product_id: Optional[str] = None
+    recipient_email: str
+    recipient_name: Optional[str] = None
+    company_name: Optional[str] = None
+    country: Optional[str] = None
+    buyer_type: Optional[str] = None
+    subject: Optional[str] = None
+    body_template: Optional[str] = None
+    attach_presentation: bool = True
 
 class SettingsUpdateRequest(BaseModel):
     SEARCH_KEYWORD: Optional[str] = "Himalayan Sound Healing Bowls"
@@ -111,11 +150,84 @@ async def health_check():
 
 
 # ==========================================
-# 2. DASHBOARD KPI & OVERVIEW
+# 2. PRODUCT CATALOG MANAGEMENT
+# ==========================================
+@app.get("/api/products")
+async def list_products():
+    """List all available products in catalog and current active product."""
+    products = ProductCatalog.list_products()
+    active_prod = ProductCatalog.get_active_product()
+    return {
+        "products": products,
+        "active_product": active_prod,
+        "total": len(products)
+    }
+
+@app.post("/api/products", status_code=status.HTTP_201_CREATED)
+async def create_product(payload: ProductCreateRequest):
+    """Add a new product to the export catalog."""
+    try:
+        new_prod = ProductCatalog.add_product(payload.model_dump())
+        return {
+            "success": True,
+            "message": f"Product '{new_prod['name']}' created successfully.",
+            "product": new_prod
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to create product: {str(e)}")
+
+@app.put("/api/products/{product_id}")
+async def update_product_endpoint(product_id: str, payload: ProductUpdateRequest):
+    """Update an existing product configuration."""
+    updated = ProductCatalog.update_product(product_id, payload.model_dump(exclude_unset=True))
+    if not updated:
+        raise HTTPException(status_code=404, detail=f"Product with id '{product_id}' not found.")
+    return {
+        "success": True,
+        "message": f"Product '{updated['name']}' updated successfully.",
+        "product": updated
+    }
+
+@app.delete("/api/products/{product_id}")
+async def delete_product_endpoint(product_id: str):
+    """Delete a product from catalog."""
+    deleted = ProductCatalog.delete_product(product_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail=f"Product with id '{product_id}' not found.")
+    return {
+        "success": True,
+        "message": "Product removed successfully.",
+        "active_product": ProductCatalog.get_active_product()
+    }
+
+@app.post("/api/products/{product_id}/activate")
+async def activate_product_endpoint(product_id: str):
+    """Set the specified product as globally active."""
+    activated = ProductCatalog.set_active_product(product_id)
+    if not activated:
+        raise HTTPException(status_code=404, detail=f"Product with id '{product_id}' not found.")
+    return {
+        "success": True,
+        "message": f"'{activated['name']}' is now the active export product.",
+        "product": activated
+    }
+
+
+# ==========================================
+# 3. DASHBOARD KPI & OVERVIEW
 # ==========================================
 @app.get("/api/dashboard")
-async def get_dashboard_data():
-    metrics = ReportGenerator.get_campaign_metrics()
+async def get_dashboard_data(product_id: Optional[str] = None):
+    active_prod = None
+    if product_id:
+        active_prod = ProductCatalog.get_product(product_id)
+    if not active_prod:
+        active_prod = ProductCatalog.get_active_product()
+
+    effective_product_id = active_prod.get("id") if active_prod else None
+    metrics = ReportGenerator.get_campaign_metrics(product_id=effective_product_id)
     settings = load_settings()
     search_cfg = get_search_provider_config()
     gemini_key, gemini_model = get_gemini_config()
@@ -123,8 +235,10 @@ async def get_dashboard_data():
 
     return {
         "metrics": metrics,
+        "active_product": active_prod,
+        "products": ProductCatalog.list_products(),
         "system": {
-            "search_keyword": settings.get("SEARCH_KEYWORD", "Himalayan Sound Healing Bowls"),
+            "search_keyword": active_prod.get("name") if active_prod else settings.get("SEARCH_KEYWORD", "Himalayan Sound Healing Bowls"),
             "search_provider": search_cfg.get("provider", "google_cse"),
             "search_configured": bool(search_cfg.get("api_key")),
             "gemini_configured": bool(gemini_key),
@@ -136,15 +250,17 @@ async def get_dashboard_data():
 
 
 # ==========================================
-# 3. LIVE BUYER DISCOVERY & LEADS
+# 4. LIVE BUYER DISCOVERY & LEADS
 # ==========================================
 @app.get("/api/leads")
-async def get_all_leads():
+async def get_all_leads(product_id: Optional[str] = None):
     if not BUYERS_CSV.exists():
         return {"total": 0, "leads": []}
 
     try:
         df = pd.read_csv(BUYERS_CSV, dtype=str).fillna("")
+        if product_id and "product_id" in df.columns:
+            df = df[df["product_id"] == product_id]
         records = df.to_dict(orient="records")
         return {"total": len(records), "leads": records}
     except Exception as e:
@@ -154,17 +270,30 @@ async def get_all_leads():
 async def discover_buyers_endpoint(payload: SearchRequest):
     """
     Discovers international export buyers using live web search API.
-    Extracts business metadata, source URLs, and validates contacts in real-time.
+    Resolves product context from ProductCatalog and validates contacts in real-time.
     """
+    # Resolve product from catalog
+    target_product = None
+    if payload.product_id:
+        target_product = ProductCatalog.get_product(payload.product_id)
+    if not target_product:
+        target_product = ProductCatalog.get_active_product()
+
+    product_name = payload.product or target_product.get("name") or "Himalayan Sound Healing Bowls"
+    product_id = target_product.get("id") or "himalayan-sound-healing-bowls"
+    keywords = payload.keywords or target_product.get("keywords")
+    buyer_type = payload.buyer_type or (target_product.get("buyer_types")[0] if target_product.get("buyer_types") else "Distributor")
+
     provider = WebBuyerSearchProvider()
 
     try:
         leads = await provider.search(
-            product=payload.product or "Himalayan Sound Healing Bowls",
+            product=product_name,
             country=payload.country,
-            buyer_type=payload.buyer_type,
-            keywords=payload.keywords,
-            limit=payload.limit or 10
+            buyer_type=buyer_type,
+            keywords=keywords,
+            limit=payload.limit or 25,
+            product_id=product_id
         )
     except SearchProviderNotConfiguredError as e:
         raise HTTPException(
@@ -217,10 +346,10 @@ async def discover_buyers_endpoint(payload: SearchRequest):
             print(f"Error ingesting search leads: {e}")
 
     query_str = provider.build_search_query(
-        product=payload.product or "Himalayan Sound Healing Bowls",
+        product=product_name,
         country=payload.country,
-        buyer_type=payload.buyer_type,
-        keywords=payload.keywords
+        buyer_type=buyer_type,
+        keywords=keywords
     )
 
     from datetime import datetime, timezone
@@ -231,15 +360,18 @@ async def discover_buyers_endpoint(payload: SearchRequest):
         "query": query_str,
         "source": provider.provider,
         "searched_at": searched_at,
+        "product_id": product_id,
+        "product_name": product_name,
         "total_found": len(leads),
         "count": len(leads),
         "buyers": leads,
         "results": leads,
         "query_details": {
-            "product": payload.product,
+            "product_id": product_id,
+            "product": product_name,
             "country": payload.country,
-            "buyer_type": payload.buyer_type,
-            "keywords": payload.keywords,
+            "buyer_type": buyer_type,
+            "keywords": keywords,
             "limit": payload.limit
         }
     }
@@ -286,34 +418,51 @@ async def validate_single_email_endpoint(email: str = Form(...)):
 # 5. AI CLASSIFICATION
 # ==========================================
 @app.get("/api/classification")
-async def get_classification_data():
+async def get_classification_data(product_id: Optional[str] = None):
     biz_leads, ind_leads = [], []
     if BUSINESS_EMAILS_CSV.exists():
         try:
-            biz_leads = pd.read_csv(BUSINESS_EMAILS_CSV, dtype=str).fillna("").to_dict(orient="records")
+            df_biz = pd.read_csv(BUSINESS_EMAILS_CSV, dtype=str).fillna("")
+            if product_id and "product_id" in df_biz.columns:
+                df_biz = df_biz[df_biz["product_id"] == product_id]
+            biz_leads = df_biz.to_dict(orient="records")
         except Exception:
             pass
 
     if INDIVIDUAL_EMAILS_CSV.exists():
         try:
-            ind_leads = pd.read_csv(INDIVIDUAL_EMAILS_CSV, dtype=str).fillna("").to_dict(orient="records")
+            df_ind = pd.read_csv(INDIVIDUAL_EMAILS_CSV, dtype=str).fillna("")
+            if product_id and "product_id" in df_ind.columns:
+                df_ind = df_ind[df_ind["product_id"] == product_id]
+            ind_leads = df_ind.to_dict(orient="records")
         except Exception:
             pass
 
     gemini_key, gemini_model = get_gemini_config()
+    active_prod = ProductCatalog.get_product(product_id) if product_id else ProductCatalog.get_active_product()
 
     return {
         "has_gemini_key": bool(gemini_key),
         "gemini_model": gemini_model,
+        "product": active_prod,
         "business_count": len(biz_leads),
         "individual_count": len(ind_leads),
         "business_leads": biz_leads,
         "individual_leads": ind_leads
     }
 
+class ClassifyRequest(BaseModel):
+    product_id: Optional[str] = None
+    product_name: Optional[str] = None
+
 @app.post("/api/classify")
-async def run_classification():
-    success, status_code, msg, summary = LeadClassifier.execute_classification()
+async def run_classification(payload: Optional[ClassifyRequest] = None):
+    pid = payload.product_id if payload else None
+    pname = payload.product_name if payload else None
+    success, status_code, msg, summary = LeadClassifier.execute_classification(
+        product_id=pid,
+        product_name=pname
+    )
     if not success:
         raise HTTPException(status_code=400, detail={"error": status_code, "message": msg})
 
@@ -345,16 +494,56 @@ async def send_campaign(payload: SendCampaignRequest):
             "buyer_type": (payload.custom_buyer_type or "").strip()
         }
 
+    # Resolve product templates if not custom provided
+    target_prod = ProductCatalog.get_product(payload.product_id) if payload.product_id else ProductCatalog.get_active_product()
+    subj = payload.subject or (target_prod.get("email_subject_template") if target_prod else DEFAULT_SUBJECT)
+    body = payload.body_template or (target_prod.get("email_body_template") if target_prod else DEFAULT_BODY)
+    prod_id = target_prod.get("id") if target_prod else payload.product_id
+    prod_name = target_prod.get("name") if target_prod else None
+
     results = EmailSender.send_campaign(
         audience=payload.audience,
-        subject=payload.subject,
-        body_template=payload.body_template,
+        subject=subj,
+        body_template=body,
         attach_presentation=payload.attach_presentation,
-        custom_recipient=custom_recipient
+        custom_recipient=custom_recipient,
+        product_id=prod_id,
+        campaign_id=payload.campaign_id,
+        product_name=prod_name
     )
 
     return {
         "success": results["sent_count"] > 0 or (results["total_targeted"] == 0 and results["skipped_duplicates"] > 0),
+        "results": results
+    }
+
+@app.post("/api/send/test")
+async def send_test_email(payload: TestEmailRequest):
+    """Dispatches a real single test email via Gmail SMTP for verification."""
+    target_prod = ProductCatalog.get_product(payload.product_id) if payload.product_id else ProductCatalog.get_active_product()
+    subj = payload.subject or (target_prod.get("email_subject_template") if target_prod else DEFAULT_SUBJECT)
+    body = payload.body_template or (target_prod.get("email_body_template") if target_prod else DEFAULT_BODY)
+
+    custom_recipient = {
+        "email": payload.recipient_email.strip(),
+        "name": (payload.recipient_name or "").strip() or "Test Recipient",
+        "company": (payload.company_name or "").strip() or "Sample Export Partner",
+        "country": (payload.country or "").strip() or "United States",
+        "buyer_type": (payload.buyer_type or "").strip() or "Distributor"
+    }
+
+    results = EmailSender.send_campaign(
+        audience="custom",
+        subject=subj,
+        body_template=body,
+        attach_presentation=payload.attach_presentation,
+        custom_recipient=custom_recipient,
+        product_id=target_prod.get("id") if target_prod else None,
+        product_name=target_prod.get("name") if target_prod else None
+    )
+
+    return {
+        "success": results["sent_count"] > 0,
         "results": results
     }
 
@@ -368,8 +557,8 @@ async def get_recent_activity(limit: int = 100):
     return {"total": len(logs), "logs": logs}
 
 @app.get("/api/report")
-async def get_campaign_report():
-    metrics = ReportGenerator.get_campaign_metrics()
+async def get_campaign_report(product_id: Optional[str] = None):
+    metrics = ReportGenerator.get_campaign_metrics(product_id=product_id)
     return {"metrics": metrics}
 
 @app.get("/api/report/download")

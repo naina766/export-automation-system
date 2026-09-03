@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import apiService from './services/api';
+import { ProductProvider, useProduct } from './context/ProductContext';
 
 import Sidebar from './components/Sidebar';
 import Navbar from './components/Navbar';
@@ -24,7 +25,7 @@ const AnimatedRoutes = () => {
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, y: -8 }}
-        transition={{ duration: 0.32, ease: 'easeOut' }}
+        transition={{ duration: 0.28, ease: 'easeOut' }}
         className="w-full"
       >
         <Routes location={location} key={location.pathname}>
@@ -45,33 +46,35 @@ const AnimatedRoutes = () => {
 const PageLayout = ({ children, systemStatus }) => {
   const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const { selectedProduct } = useProduct();
 
   const getPageInfo = () => {
+    const prodName = selectedProduct ? selectedProduct.name : 'Singing Bowls';
     switch (location.pathname) {
       case '/':
         return { 
           title: 'Export Outreach Dashboard', 
-          subtitle: 'Himalayan Singing Bowls B2B Export Automation' 
+          subtitle: `${prodName} · Multi-Product B2B Export Intelligence` 
         };
       case '/discover':
         return { 
           title: 'Discover International Buyers', 
-          subtitle: 'Find real potential buyers using live search APIs.' 
+          subtitle: `Live Search Discovery for ${prodName}` 
         };
       case '/upload':
         return { 
           title: 'Import Leads', 
-          subtitle: 'Import an existing external lead dataset when needed.' 
+          subtitle: 'Import external lead datasets for batch qualification' 
         };
       case '/classify':
         return { 
           title: 'AI Lead Qualification', 
-          subtitle: 'Gemini semantic evaluation & wholesale prospect segmentation' 
+          subtitle: `Gemini semantic evaluation tailored for ${prodName}` 
         };
       case '/send':
         return { 
           title: 'Send Campaign', 
-          subtitle: 'Targeted outreach dispatch via authenticated Gmail SMTP' 
+          subtitle: `Personalized dispatch for ${prodName} via authenticated Gmail SMTP` 
         };
       case '/reports':
         return { 
@@ -81,12 +84,12 @@ const PageLayout = ({ children, systemStatus }) => {
       case '/settings':
         return { 
           title: 'System Configuration', 
-          subtitle: 'Outreach parameters, environment security, and diagnostic health' 
+          subtitle: 'Product catalog, outreach controls, and diagnostic health' 
         };
       default:
         return { 
           title: 'Export Automation', 
-          subtitle: 'Himalayan Sound Healing Bowls Platform' 
+          subtitle: `${prodName} Platform` 
         };
     }
   };
@@ -95,17 +98,17 @@ const PageLayout = ({ children, systemStatus }) => {
 
   return (
     <div className="relative min-h-screen bg-[#050816] text-[#F8FAFC] flex overflow-x-hidden">
-      {/* Ambient Animated Radial Glow Orbs */}
+      {/* Ambient Animated Radial Glow Orbs with Purple & Cyan palette */}
       <div 
-        className="fixed -top-40 -left-40 w-[600px] h-[600px] rounded-full bg-blue-600/10 blur-[130px] pointer-events-none z-0 animate-ambient-glow-blue" 
+        className="fixed -top-40 -left-40 w-[600px] h-[600px] rounded-full bg-purple-600/10 blur-[140px] pointer-events-none z-0" 
         aria-hidden="true" 
       />
       <div 
-        className="fixed top-1/3 -right-40 w-[550px] h-[550px] rounded-full bg-purple-600/10 blur-[140px] pointer-events-none z-0 animate-ambient-glow-purple" 
+        className="fixed top-1/3 -right-40 w-[550px] h-[550px] rounded-full bg-cyan-500/8 blur-[140px] pointer-events-none z-0" 
         aria-hidden="true" 
       />
       <div 
-        className="fixed -bottom-40 left-1/3 w-[500px] h-[500px] rounded-full bg-cyan-500/8 blur-[120px] pointer-events-none z-0 animate-ambient-glow-cyan" 
+        className="fixed -bottom-40 left-1/3 w-[500px] h-[500px] rounded-full bg-indigo-600/8 blur-[130px] pointer-events-none z-0" 
         aria-hidden="true" 
       />
 
@@ -121,7 +124,6 @@ const PageLayout = ({ children, systemStatus }) => {
         <Navbar 
           title={title} 
           subtitle={subtitle}
-          searchKeyword={systemStatus?.search_keyword || 'Himalayan Singing Bowls'}
           systemStatus={systemStatus}
           onMenuClick={() => setSidebarOpen(true)}
         />
@@ -133,7 +135,7 @@ const PageLayout = ({ children, systemStatus }) => {
   );
 };
 
-export const App = () => {
+const AppContent = () => {
   const [systemStatus, setSystemStatus] = useState(null);
 
   const loadStatus = async () => {
@@ -150,10 +152,18 @@ export const App = () => {
   }, []);
 
   return (
+    <PageLayout systemStatus={systemStatus}>
+      <AnimatedRoutes />
+    </PageLayout>
+  );
+};
+
+export const App = () => {
+  return (
     <BrowserRouter>
-      <PageLayout systemStatus={systemStatus}>
-        <AnimatedRoutes />
-      </PageLayout>
+      <ProductProvider>
+        <AppContent />
+      </ProductProvider>
     </BrowserRouter>
   );
 };

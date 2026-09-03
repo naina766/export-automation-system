@@ -60,7 +60,11 @@ class LeadClassifier:
         raise ValueError("Invalid JSON array response from Gemini API")
 
     @classmethod
-    def execute_classification(cls) -> Tuple[bool, str, str, Dict[str, Any]]:
+    def execute_classification(
+        cls,
+        product_id: Optional[str] = None,
+        product_name: Optional[str] = None
+    ) -> Tuple[bool, str, str, Dict[str, Any]]:
         """
         Classifies leads in data/buyers.csv using Gemini AI and partitions them into:
         - data/business_emails.csv
@@ -91,7 +95,20 @@ class LeadClassifier:
         if not api_key:
             return False, "GEMINI_NOT_CONFIGURED", "Gemini API key is not configured. Please set GEMINI_API_KEY in the backend environment to enable AI lead qualification.", {}
 
-        product = get_target_product()
+        # Resolve active product from catalog
+        try:
+            from products.catalog import ProductCatalog
+            if product_id:
+                prod = ProductCatalog.get_product(product_id) or ProductCatalog.get_active_product()
+            else:
+                prod = ProductCatalog.get_active_product()
+            resolved_product = product_name or prod.get("name") or get_target_product()
+            resolved_description = prod.get("description", "")
+        except Exception:
+            resolved_product = product_name or get_target_product()
+            resolved_description = ""
+
+        product_context = f"{resolved_product} ({resolved_description})" if resolved_description else resolved_product
 
         leads_to_classify = []
         for _, row in valid_df.iterrows():
@@ -101,7 +118,7 @@ class LeadClassifier:
                 "country": str(row.get("country", "")).strip(),
                 "buyer_type": str(row.get("buyer_type", "Distributor")).strip(),
                 "snippet": str(row.get("snippet", "")).strip(),
-                "product": product,
+                "product": resolved_product,
                 "email": str(row.get("email", "")).strip()
             })
 
@@ -110,7 +127,7 @@ class LeadClassifier:
                 leads_to_classify,
                 api_key=api_key,
                 model_name=model_name,
-                product=product
+                product=resolved_product
             )
             msg = f"Successfully qualified {len(results)} contacts using Google Gemini ({model_name})."
         except Exception as e:

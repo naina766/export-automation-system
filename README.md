@@ -1,42 +1,43 @@
-# AI-Powered Export Outreach Automation (EXPORT Automation System)
+# AI-Powered Multi-Product Export Outreach Platform (EXPORT Automation System)
 
-> **An automated production-grade full-stack system that discovers international buyers through live web search APIs, validates contact details, qualifies leads using Google Gemini AI, and executes personalized export outreach through Gmail SMTP with PDF brochure attachments.**
+> **An automated production-grade full-stack system that discovers international buyers through live web search APIs, validates contact details, qualifies leads using Google Gemini AI, and executes personalized multi-product export outreach through Gmail SMTP with PDF brochure attachments.**
 
 ---
 
 ## 📌 1. Overview & Primary Workflow
 
-The **EXPORT Automation System** is an end-to-end B2B sales automation platform purpose-built for an export enterprise manufacturing and distributing authentic handcrafted **Himalayan Singing Bowls** and sound healing meditation instruments.
+The **EXPORT Automation System** is an end-to-end multi-product B2B sales automation platform purpose-built for artisan export enterprises. The platform manages diverse product lines including authentic handcrafted **Himalayan Sound Healing Bowls**, **Tibetan Singing Bowls**, **Crystal Singing Bowls**, **Meditation Bowls**, and **Handcrafted Brass Singing Bowls**.
 
 **The system operates API-first without requiring CSV file uploads to discover buyers:**
 
 ```text
-USER INPUT (Target Product, Country, Buyer Type, Keywords)
+USER INPUT (Export Product Line, Country, Buyer Type, Keywords)
         ↓
 REAL BUYER SEARCH API (Google Custom Search / Serper / SerpAPI / Tavily)
         ↓
 REAL BUSINESS DISCOVERY & PUBLIC WEBSITE CONTACT EXTRACTION
         ↓
-EMAIL SYNTAX & DOMAIN VALIDATION (No fabricated emails; missing = null)
+DETERMINISTIC ID & EMAIL VALIDATION (RFC 5322 syntax; no fabricated emails)
         ↓
-GEMINI AI LEAD QUALIFICATION (B2B Distributor vs Retail Consumer)
+GEMINI AI QUALIFICATION (Semantic fit for chosen product line)
         ↓
-PERSONALIZED OUTREACH DRAFTING (Multi-variable template with PDF catalog)
+PERSONALIZED OUTREACH DRAFTING (Hydrated with {{product_name}}, {{company_name}} & PDF catalog)
         ↓
-USER CONFIRMATION MODAL & REAL GMAIL SMTP TRANSMISSION
+USER CONFIRMATION MODAL & REAL GMAIL SMTP TRANSMISSION (STARTTLS 587)
         ↓
-AUDIT LOGGING & REAL-TIME KPI REPORTING
+CAMPAIGN AUDIT LOGGING & MULTI-PRODUCT KPI REPORTING
 ```
 
 ---
 
 ## 🎯 2. Problem Statement
 
-Handmade artisan exporters (such as Himalayan Singing Bowls producers) face significant international expansion challenges:
-1. **Manual Prospecting Bottlenecks:** Manually researching international distributors, meditation studios, and acoustic wellness importers across global markets (US, UK, Germany, France, Canada, Australia) is slow and non-scalable.
-2. **High Bounce Rates & Reputation Damage:** Sending cold emails without rigorous RFC-compliant syntax checking and cross-campaign deduplication harms sender domain reputation.
-3. **Generic Impersonal Messaging:** Unsegmented, non-personalized cold outreach fails to establish credibility with overseas enterprise buyers.
-4. **Disjointed Outreach Stacks:** Fragmented tools create data silos between search discovery, qualification, catalog dispatch, and audit logging.
+Handmade artisan exporters face significant international expansion challenges:
+1. **Single-Product Rigidity:** Many legacy tools assume a single static product, preventing businesses from marketing varied instrument lines (e.g. Quartz Crystal bowls vs hand-hammered 7-metal Tibetan bowls).
+2. **Manual Prospecting Bottlenecks:** Manually researching international distributors, meditation studios, and acoustic wellness importers across global markets (US, UK, Germany, France, Canada, Australia) is slow and non-scalable.
+3. **High Bounce Rates & Reputation Damage:** Sending cold emails without rigorous RFC-compliant syntax checking and cross-campaign deduplication harms sender domain reputation.
+4. **Generic Impersonal Messaging:** Unsegmented, non-personalized cold outreach fails to establish credibility with overseas enterprise buyers.
+5. **Disjointed Outreach Stacks:** Fragmented tools create data silos between search discovery, qualification, catalog dispatch, and audit logging.
 
 ---
 
@@ -45,7 +46,7 @@ Handmade artisan exporters (such as Himalayan Singing Bowls producers) face sign
 ```text
                ┌────────────────────────────────────────────────────────┐
                │    Production Web Application (React 18 + Vite)        │
-               │  Dashboard • Discover Buyers • AI Qualify • Send • ... │
+               │  Global Product Context • Navbar Selector • Dashboard  │
                └──────────────────────────┬─────────────────────────────┘
                                           │ HTTP / REST
                                           ▼
@@ -63,19 +64,26 @@ Handmade artisan exporters (such as Himalayan Singing Bowls producers) face sign
                       ▼                   ▼                   ▼
            ┌────────────────────────────────────────────────────────────┐
            │            Thread-Safe CSV & JSON Persistent Storage        │
-           │    buyers.csv • business_emails.csv • sent_log.csv • ...   │
+           │  products.json • buyers.csv • sent_log.csv • settings.json │
            └────────────────────────────────────────────────────────────┘
 ```
 
-- 🌐 **Live Web Buyer Discovery:** Modular provider architecture connecting to legitimate search APIs (`google_cse`, `serper`, `serpapi`, `tavily`). Discovers company names, domains, contact hints, source URLs, and timestamps.
+- 📦 **Multi-Product Catalog Management:** Dynamic product catalog stored in `data/products.json` with comprehensive REST API (`GET`, `POST`, `PUT`, `DELETE`, `/activate`). Seeded with 5 realistic export lines:
+  1. *Himalayan Sound Healing Bowls*
+  2. *Tibetan Singing Bowls*
+  3. *Crystal Singing Bowls*
+  4. *Meditation Bowls*
+  5. *Handcrafted Brass Singing Bowls*
+- 🌐 **Global Product Context & Header Dropdown:** Instant application-wide product switching via React Context (`ProductContext`). Switching the product immediately updates the active targeting parameters, AI qualification context, email preview templates, and reports across all pages.
+- 🔍 **Live Web Buyer Discovery:** Modular provider architecture connecting to legitimate search APIs (`google_cse`, `serper`, `serpapi`, `tavily`). Discovers company names, domains, contact hints, source URLs, and timestamps.
 - 🛡️ **Zero Fake Data Guarantee:** If search API credentials are not configured, the system returns an explicit `SEARCH_PROVIDER_NOT_CONFIGURED` status with helpful setup directions. Missing emails are strictly set to `null` (never fabricated).
-- 📧 **Email Syntax Validation & Deduplication:** RFC 5322 domain format checking and cross-campaign deduplication against previous dispatches in [`data/sent_log.csv`](data/sent_log.csv).
-- 🤖 **Gemini AI Lead Qualification:** Semantic prompt qualification using configurable Gemini models (`GEMINI_MODEL`, defaulting to `gemini-1.5-flash`) to categorize commercial B2B partners.
-- ✉️ **Dynamic Personalization:** Sanitized multi-variable placeholder replacement (`{{company_name}}`, `{{contact_name}}`, `{{country}}`, `{{buyer_type}}`, `{{product}}`) with live preview.
+- 📧 **Deterministic Deduplication & Email Syntax Validation:** SHA-256 deterministic lead IDs and cross-campaign deduplication against previous dispatches in [`data/sent_log.csv`](data/sent_log.csv).
+- 🤖 **Product-Aware Gemini AI Qualification:** Evaluates prospective business leads specifically against the active product line's acoustic, therapy, or distributor characteristics.
+- ✉️ **Dynamic Template Personalization:** Sanitized multi-variable placeholder replacement (`{{product_name}}`, `{{company_name}}`, `{{contact_name}}`, `{{country}}`, `{{buyer_type}}`) with live preview.
 - 📎 **MIME PDF Brochure Attachments:** Automatic attachment verification and packaging of [`assets/company_presentation.pdf`](assets/company_presentation.pdf).
 - 🔒 **Production Gmail SMTP Transport:** Authenticated STARTTLS transmission with exponential backoff retries on transient connection failures.
 - 🎯 **Send Test Email Capability:** Dedicated test recipient dispatch tab to verify end-to-end delivery to any target inbox before executing bulk campaigns.
-- 📊 **Audit Logs & Exportable Analytics:** Persistent tracking in `data/sent_log.csv` with one-click CSV report export.
+- 📊 **Audit Logs & Exportable Analytics:** Persistent tracking in `data/sent_log.csv` with multi-product filtering and one-click CSV report export.
 
 ---
 
@@ -83,8 +91,9 @@ Handmade artisan exporters (such as Himalayan Singing Bowls producers) face sign
 
 ### Frontend
 - **Framework:** React 18 + Vite
-- **Styling:** Tailwind CSS (Dark SaaS Glassmorphism design system)
+- **Styling:** Tailwind CSS (Executive Dark Palette: `#050816` background, `#0B1220` surface, `#111827` card, `#7C3AED` purple primary, `#06B6D4` cyan secondary)
 - **Routing:** React Router DOM v6
+- **Context:** React Context API (`ProductContext`)
 - **Icons:** Lucide React
 - **HTTP Client:** Axios
 
@@ -94,7 +103,7 @@ Handmade artisan exporters (such as Himalayan Singing Bowls producers) face sign
 - **Email Transport:** `smtplib`, `email.mime`, `email-validator`
 - **AI Classification:** Google Generative AI SDK (`google.generativeai`)
 - **Search Provider:** HTTP client integrations (`google_cse`, `serper`, `serpapi`, `tavily`)
-- **Testing:** Pytest, FastAPI TestClient
+- **Testing:** Pytest (34 unit & integration tests)
 
 ---
 
@@ -108,20 +117,23 @@ ExportAutomation/
 ├── requirements.txt                  # Python dependencies
 ├── pytest.ini                        # Pytest configuration
 ├── assets/
-│   └── company_presentation.pdf      # Himalayan Singing Bowls export catalog
+│   └── company_presentation.pdf      # Singing Bowls export catalog
 ├── data/
-│   ├── buyers.csv                    # Ingested & discovered leads
+│   ├── products.json                 # Multi-product catalog configuration
+│   ├── buyers.csv                    # Ingested & discovered leads (with product_id)
 │   ├── business_emails.csv           # B2B qualified leads
 │   ├── individual_emails.csv         # Retail / individual leads
-│   ├── sent_log.csv                  # Immutable campaign audit log
+│   ├── sent_log.csv                  # Immutable campaign audit log (with product_id)
 │   └── settings.json                 # Non-sensitive runtime settings
 ├── backend/
 │   ├── main.py                       # FastAPI entry point & REST endpoints
 │   ├── config.py                     # Configuration & environment loader
+│   ├── products/
+│   │   └── catalog.py                # ProductCatalog manager & schema
 │   ├── search/
 │   │   ├── base.py                   # BuyerSearchProvider abstract interface
 │   │   ├── parser.py                 # Metadata & domain extraction
-│   │   ├── normalizer.py             # Schema normalization & timestamps
+│   │   ├── normalizer.py             # Schema normalization & deterministic IDs
 │   │   └── web_search_provider.py    # Production search API implementation
 │   ├── extraction/
 │   │   └── data_extractor.py         # CSV parser & column normalizer
@@ -137,28 +149,28 @@ ExportAutomation/
 │   └── reports/
 │       └── report_generator.py       # Metrics & CSV report generator
 ├── frontend/
-│   ├── package.json
-│   ├── vite.config.js
-│   ├── tailwind.config.js
-│   └── src/
-│       ├── App.jsx                   # Layout & global routing
-│       ├── services/
-│       │   └── api.js                # Centralized Axios API client
-│       ├── components/               # UI components (Navbar, Sidebar, StatCard, ...)
-│       └── pages/
-│           ├── Dashboard.jsx         # Pipeline funnel & KPI overview
-│           ├── DiscoverBuyers.jsx    # Live web search buyer discovery (PRIMARY)
-│           ├── Upload.jsx            # Lead Store & Optional CSV Import
-│           ├── Classification.jsx    # Gemini AI lead segmentation
-│           ├── SendCampaign.jsx      # SMTP dispatcher & Test Email
-│           ├── Reports.jsx           # Analytics & CSV export
-│           └── Settings.jsx          # Service status & parameters
+│   ├── src/
+│   │   ├── context/
+│   │   │   └── ProductContext.jsx    # Global product state & actions
+│   │   ├── components/
+│   │   │   ├── Navbar.jsx            # Global header with product selector
+│   │   │   └── Sidebar.jsx           # Application navigation
+│   │   ├── pages/
+│   │   │   ├── Dashboard.jsx         # Product-aware KPIs & pipeline
+│   │   │   ├── DiscoverBuyers.jsx    # Live search targeting
+│   │   │   ├── Classification.jsx    # Product-aware Gemini qualification
+│   │   │   ├── SendCampaign.jsx      # Multi-product outreach & test send
+│   │   │   ├── Reports.jsx           # Product-filtered telemetry
+│   │   │   └── Settings.jsx          # Product catalog management
+│   │   └── services/
+│   │       └── api.js                # Axios client with product endpoints
 └── tests/
-    ├── test_api.py                   # REST API test suite
-    ├── test_classification.py        # Gemini classification tests
-    ├── test_reports.py               # KPI report tests
-    ├── test_search_discovery.py      # Search query, parser & provider tests
-    └── test_validation.py            # Email validation & deduplication tests
+    ├── test_api.py                   # REST API integration tests
+    ├── test_products.py              # Product CRUD & template tests
+    ├── test_classification.py        # Gemini AI classification tests
+    ├── test_reports.py               # Metrics & CSV export tests
+    ├── test_search_discovery.py      # Live search & deduplication tests
+    └── test_validation.py            # Email validation & hygiene tests
 ```
 
 ---

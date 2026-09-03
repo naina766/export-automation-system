@@ -7,15 +7,18 @@ import {
   ShieldAlert, 
   Layers,
   CheckCircle,
-  ExternalLink
+  ExternalLink,
+  Package
 } from 'lucide-react';
 import apiService from '../services/api';
+import { useProduct } from '../context/ProductContext';
 import StatusBadge from '../components/StatusBadge';
 import Notification from '../components/Notification';
 import LoadingSpinner from '../components/LoadingSpinner';
 
 export const Classification = () => {
   const navigate = useNavigate();
+  const { selectedProduct } = useProduct();
   const [classData, setClassData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [classifying, setClassifying] = useState(false);
@@ -24,7 +27,7 @@ export const Classification = () => {
   const fetchClassification = async () => {
     try {
       setLoading(true);
-      const res = await apiService.getClassification();
+      const res = await apiService.getClassification(selectedProduct?.id);
       setClassData(res);
     } catch (err) {
       console.error(err);
@@ -35,16 +38,19 @@ export const Classification = () => {
 
   useEffect(() => {
     fetchClassification();
-  }, []);
+  }, [selectedProduct?.id]);
 
   const handleRunClassification = async () => {
     try {
       setClassifying(true);
       setNotification({ type: '', message: '' });
-      const res = await apiService.classifyLeads();
+      const res = await apiService.classifyLeads({
+        product_id: selectedProduct?.id,
+        product_name: selectedProduct?.name
+      });
       setNotification({
         type: 'success',
-        message: res.message || 'AI qualification completed successfully.'
+        message: res.message || `AI qualification for ${selectedProduct?.name || 'export products'} completed.`
       });
       fetchClassification();
     } catch (err) {
@@ -93,16 +99,20 @@ export const Classification = () => {
       />
 
       {/* Header Banner */}
-      <div className="bg-[#0F172A] border border-[rgba(148,163,184,0.12)] rounded-2xl p-6 shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="bg-[#0B1220] border border-[#1E293B] rounded-2xl p-6 shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <div className="flex items-center gap-2 mb-1">
+          <div className="flex items-center gap-2 mb-1 flex-wrap">
             <h1 className="text-base sm:text-lg font-bold text-[#F8FAFC]">AI Lead Qualification</h1>
             <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-purple-500/15 text-purple-300 border border-purple-500/30 font-semibold">
               Gemini ({geminiModel})
             </span>
+            <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 font-semibold flex items-center gap-1">
+              <Package className="w-3 h-3" />
+              <span>Target: {selectedProduct?.name || 'Singing Bowls'}</span>
+            </span>
           </div>
           <p className="text-xs text-[#94A3B8] max-w-2xl leading-relaxed">
-            Gemini analyzes discovered businesses and identifies high-value wholesale, importer, distributor, and sound-healing prospects.
+            Gemini evaluates business domain suitability and classifies prospects specifically for {selectedProduct?.name || 'your export product line'}.
           </p>
         </div>
 
@@ -110,7 +120,7 @@ export const Classification = () => {
           <button
             onClick={handleRunClassification}
             disabled={classifying || !hasGeminiKey}
-            className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#3B82F6] hover:bg-[#60A5FA] text-white text-xs font-bold transition-all shadow-md shadow-blue-500/20 disabled:opacity-40 active:scale-95"
+            className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold transition-all shadow-md shadow-purple-600/20 disabled:opacity-40 active:scale-95"
           >
             <Sparkles className="w-4 h-4" />
             <span>{classifying ? 'Qualifying Leads...' : 'Run AI Qualification'}</span>

@@ -95,7 +95,8 @@ class WebBuyerSearchProvider(BuyerSearchProvider):
         country: Optional[str] = None,
         buyer_type: Optional[str] = None,
         keywords: Optional[Union[str, List[str]]] = None,
-        limit: int = 10
+        limit: int = 10,
+        product_id: Optional[str] = None
     ) -> List[Dict[str, Any]]:
         """
         Executes live external search via configured provider.
@@ -147,7 +148,7 @@ class WebBuyerSearchProvider(BuyerSearchProvider):
                 raise
             raise SearchProviderAPIError(f"Failed to query live search provider: {str(e)}")
 
-        normalized_leads = normalize_lead_batch(parsed_items, provider_source=self.provider)
+        normalized_leads = normalize_lead_batch(parsed_items, provider_source=self.provider, product_id=product_id)
         return normalized_leads[:limit]
 
     async def _search_google_cse(self, client: httpx.AsyncClient, query: str, limit: int) -> List[Dict[str, Any]]:

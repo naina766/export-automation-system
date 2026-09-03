@@ -16,9 +16,10 @@ class ReportGenerator:
     """Generates executive analytics summaries and exportable CSV reports."""
 
     @classmethod
-    def get_campaign_metrics(cls) -> Dict[str, Any]:
-        """Calculates comprehensive executive campaign metrics from real data."""
+    def get_campaign_metrics(cls, product_id: Optional[str] = None) -> Dict[str, Any]:
+        """Calculates comprehensive executive campaign metrics from real data with optional product filter."""
         metrics: Dict[str, Any] = {
+            "product_id": product_id,
             "total_leads": 0,
             "valid_emails": 0,
             "invalid_emails": 0,
@@ -40,6 +41,7 @@ class ReportGenerator:
             "countries_count": 0,
             "countries_covered": 0,
             "buyer_segments": [],
+            "products_summary": [],
             "data_hygiene": {
                 "valid_contacts": 0,
                 "invalid_emails": 0,
@@ -56,10 +58,23 @@ class ReportGenerator:
             "recent_activity": []
         }
 
+        # Products breakdown summary
+        try:
+            from products.catalog import ProductCatalog
+            all_prods = ProductCatalog.list_products()
+            metrics["products_summary"] = [
+                {"id": p.get("id"), "name": p.get("name"), "active": p.get("active", False)}
+                for p in all_prods
+            ]
+        except Exception:
+            metrics["products_summary"] = []
+
         # 1. Analyze buyers.csv
         if BUYERS_CSV.exists():
             try:
                 df = pd.read_csv(BUYERS_CSV, dtype=str).fillna("")
+                if product_id and "product_id" in df.columns:
+                    df = df[df["product_id"] == product_id]
                 total_count = len(df)
                 metrics["total_leads"] = total_count
 
@@ -141,6 +156,8 @@ class ReportGenerator:
         if SENT_LOG_CSV.exists():
             try:
                 sent_df = pd.read_csv(SENT_LOG_CSV, dtype=str).fillna("")
+                if product_id and "product_id" in sent_df.columns:
+                    sent_df = sent_df[sent_df["product_id"] == product_id]
                 if not sent_df.empty:
                     prod_successful = 0
                     prod_failed = 0

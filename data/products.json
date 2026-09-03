@@ -1,0 +1,143 @@
+[
+  {
+    "id": "himalayan-sound-healing-bowls",
+    "name": "Himalayan Sound Healing Bowls",
+    "description": "Authentic hand-hammered 7-metal acoustic healing bowls forged in the Himalayas for certified sound therapists, meditation centers, and holistic distributors.",
+    "keywords": [
+      "Himalayan sound healing bowls",
+      "sound healing bowls wholesale",
+      "Tibetan singing bowls importer",
+      "meditation bowls distributor"
+    ],
+    "buyer_types": [
+      "Wholesale Importer",
+      "Distributor",
+      "Wellness Studio",
+      "Sound Healing Center",
+      "Metaphysical Retailer"
+    ],
+    "target_countries": [
+      "United States",
+      "United Kingdom",
+      "Germany",
+      "Canada",
+      "Australia"
+    ],
+    "email_subject_template": "Export Supply Partnership: {{product_name}} for {{company_name}}",
+    "email_body_template": "Hello {{contact_name}},\n\nI am reaching out regarding {{company_name}} in {{country}}.\n\nAs a premier direct exporter of authentic {{product_name}}, we partner with leading wellness distributors and specialty retailers across {{country}}.\n\nWe would welcome the opportunity to supply your organization with export-grade inventory directly from our artisans.\n\nPlease find our catalog and B2B pricing schedule attached.\n\nBest regards,\nExport Sales Team",
+    "catalog_path": "assets/company_presentation.pdf",
+    "active": true
+  },
+  {
+    "id": "tibetan-singing-bowls",
+    "name": "Tibetan Singing Bowls",
+    "description": "Traditional hand-crafted Tibetan singing bowls tuned to fundamental chakra frequencies, suited for Buddhist centers, yoga studios, and spiritual gift retailers.",
+    "keywords": [
+      "Tibetan singing bowls wholesale",
+      "traditional singing bowls distributor",
+      "Buddhist singing bowls supplier",
+      "chakra singing bowls wholesale"
+    ],
+    "buyer_types": [
+      "Wholesale Importer",
+      "Distributor",
+      "Yoga & Meditation Studio",
+      "Gift Retailer"
+    ],
+    "target_countries": [
+      "United States",
+      "Germany",
+      "France",
+      "United Kingdom",
+      "Japan"
+    ],
+    "email_subject_template": "B2B Export Inquiry: Authentic {{product_name}} for {{company_name}}",
+    "email_body_template": "Hello {{contact_name}},\n\nWe noticed {{company_name}}'s focus on mindfulness and wellness products in {{country}}.\n\nOur workshop exports certified authentic {{product_name}} crafted using traditional alloy compositions. We offer reliable international freight and competitive distributor tiers.\n\nAttached is our current catalog for your review.\n\nWarm regards,\nInternational Trade Department",
+    "catalog_path": "assets/company_presentation.pdf",
+    "active": false
+  },
+  {
+    "id": "crystal-singing-bowls",
+    "name": "Crystal Singing Bowls",
+    "description": "High-purity quartz crystal singing bowls tuned precisely to 432Hz and 528Hz solfeggio scales for modern sound baths and holistic clinics.",
+    "keywords": [
+      "quartz crystal singing bowls wholesale",
+      "crystal singing bowl distributor",
+      "432hz sound bowl supplier",
+      "crystal bowl sound healing wholesale"
+    ],
+    "buyer_types": [
+      "Distributor",
+      "Wholesale Importer",
+      "Sound Bath Studio",
+      "Holistic Health Clinic"
+    ],
+    "target_countries": [
+      "United States",
+      "Australia",
+      "Canada",
+      "United Kingdom",
+      "Netherlands"
+    ],
+    "email_subject_template": "Wholesale Partnership: Precision {{product_name}} for {{company_name}}",
+    "email_body_template": "Hello {{contact_name}},\n\nI hope this email finds you well at {{company_name}}.\n\nWe specialize in bulk manufacturing and export of high-purity {{product_name}} with accurate frequency calibration (432Hz / 528Hz).\n\nIf {{company_name}} is interested in expanding your inventory with direct factory margins, please review our attached catalog.\n\nBest regards,\nOEM Export Coordinator",
+    "catalog_path": "assets/company_presentation.pdf",
+    "active": false
+  },
+  {
+    "id": "meditation-bowls",
+    "name": "Meditation Bowls",
+    "description": "Compact etched meditation and mindfulness singing bowls with wooden strikers and silk cushions, ideal for retail gift chains and mindfulness subscription boxes.",
+    "keywords": [
+      "meditation singing bowls wholesale",
+      "mindfulness singing bowls supplier",
+      "meditation gift sets bulk",
+      "yoga meditation bowls importer"
+    ],
+    "buyer_types": [
+      "Retail Chain Buyer",
+      "Wholesale Importer",
+      "Gift Distributor",
+      "Mindfulness Center"
+    ],
+    "target_countries": [
+      "United States",
+      "Canada",
+      "United Kingdom",
+      "Germany",
+      "Singapore"
+    ],
+    "email_subject_template": "Direct Supply of Handcrafted {{product_name}} \u2014 {{company_name}}",
+    "email_body_template": "Hello {{contact_name}},\n\nReaching out from our Himalayan artisan export facility regarding {{company_name}}.\n\nWe produce artisan-packaged {{product_name}} with high consumer appeal and complete accessory sets (cushion + striker). We provide custom branding and export shipping to {{country}}.\n\nPlease find our presentation and wholesale volume discounts attached.\n\nBest regards,\nCommercial Outreach Team",
+    "catalog_path": "assets/company_presentation.pdf",
+    "active": false
+  },
+  {
+    "id": "handcrafted-brass-singing-bowls",
+    "name": "Handcrafted Brass Singing Bowls",
+    "description": "Heavy-gauge brass alloy singing bowls with antique etched motifs and long sustain, designed for acoustic sound therapy and cultural craft importers.",
+    "keywords": [
+      "brass singing bowls wholesale",
+      "handcrafted brass singing bowl exporter",
+      "etched singing bowls distributor",
+      "brass meditation bowls supplier"
+    ],
+    "buyer_types": [
+      "Wholesale Importer",
+      "Distributor",
+      "Cultural Craft Retailer",
+      "Acoustic Therapy Center"
+    ],
+    "target_countries": [
+      "United States",
+      "Germany",
+      "United Kingdom",
+      "Spain",
+      "Switzerland"
+    ],
+    "email_subject_template": "Export Opportunity: {{product_name}} for {{company_name}}",
+    "email_body_template": "Hello {{contact_name}},\n\nI am contacting you on behalf of our export workshop regarding prospective supply for {{company_name}} in {{country}}.\n\nOur authentic {{product_name}} offer resonant sustain and handcrafted artisan finishes that perform exceptionally well in premium retail and therapeutic settings.\n\nOur catalog is attached for your review. We look forward to connecting.\n\nSincerely,\nLead Export Representative",
+    "catalog_path": "assets/company_presentation.pdf",
+    "active": false
+  }
+]
