@@ -65,10 +65,12 @@ def get_search_provider_config() -> dict:
     """Retrieve external search provider configuration from environment."""
     load_dotenv(PROJECT_ROOT / ".env", override=True)
     load_dotenv(BACKEND_DIR / ".env", override=True)
+    provider = os.getenv("SEARCH_PROVIDER", "serper").strip().lower()
     return {
-        "provider": os.getenv("SEARCH_PROVIDER", "google_cse").strip(),
+        "provider": provider,
         "api_key": os.getenv("SEARCH_API_KEY", "").strip(),
-        "engine_id": os.getenv("SEARCH_ENGINE_ID", "").strip()
+        "engine_id": os.getenv("SEARCH_ENGINE_ID", "").strip(),
+        "cx_id": os.getenv("SEARCH_ENGINE_ID", "").strip()
     }
 
 def get_gemini_config() -> tuple[str, str]:

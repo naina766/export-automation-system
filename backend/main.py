@@ -689,16 +689,16 @@ async def test_gemini_connection():
 async def test_search_connection():
     """Validates Search Provider configuration."""
     search_cfg = get_search_provider_config()
-    provider = search_cfg.get("provider", "google_cse")
+    provider = search_cfg.get("provider", "serper")
     api_key = search_cfg.get("api_key", "")
-    cx_id = search_cfg.get("cx_id", "")
+    engine_id = search_cfg.get("engine_id", "") or search_cfg.get("cx_id", "")
 
-    if not api_key:
+    if not api_key or api_key.lower().startswith("your_") or api_key.lower() in ["placeholder", "none", "null"]:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Search API key is not configured for provider '{provider}'."
+            detail=f"Search API key is not configured for provider '{provider}'. Please configure SEARCH_API_KEY in .env."
         )
-    if provider == "google_cse" and not cx_id:
+    if provider == "google_cse" and (not engine_id or engine_id.lower().startswith("your_")):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Google Custom Search Engine CX ID (SEARCH_ENGINE_ID) is required for google_cse."

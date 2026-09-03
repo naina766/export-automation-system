@@ -109,6 +109,39 @@ def test_unconfigured_search_raises_specific_error():
             asyncio.run(provider.search())
         assert "Search provider is not configured. Add SEARCH_API_KEY and SEARCH_ENGINE_ID in the backend environment." in str(exc_info.value)
 
+def test_unconfigured_serper_raises_specific_error():
+    with patch("search.web_search_provider.get_search_provider_config", return_value={"provider": "serper", "api_key": "", "engine_id": ""}):
+        provider = WebBuyerSearchProvider()
+        assert provider.is_configured() is False
+        with pytest.raises(SearchProviderNotConfiguredError) as exc_info:
+            asyncio.run(provider.search())
+        assert "Search provider 'serper' is not configured. Add a valid SEARCH_API_KEY in the backend environment." in str(exc_info.value)
+
+def test_placeholder_key_detected_as_unconfigured():
+    with patch("search.web_search_provider.get_search_provider_config", return_value={"provider": "serper", "api_key": "your_search_api_key_here", "engine_id": ""}):
+        provider = WebBuyerSearchProvider()
+        assert provider.is_configured() is False
+
+def test_valid_search_request_with_mocked_serper_api():
+    mock_items = [
+        {
+            "title": "Zen Imports LLC - Singing Bowls",
+            "link": "https://zenimports.com",
+            "snippet": "Wholesale singing bowls for meditation studios. Contact: contact@zenimports.com"
+        }
+    ]
+    with patch("search.web_search_provider.get_search_provider_config", return_value={"provider": "serper", "api_key": "real_serper_key", "engine_id": ""}):
+        provider = WebBuyerSearchProvider()
+        assert provider.is_configured() is True
+        with patch.object(provider, "_search_serper", new_callable=AsyncMock) as mock_search:
+            mock_search.return_value = mock_items
+            results = asyncio.run(provider.search(product="Tibetan Singing Bowls", country="United States", buyer_type="Wholesaler"))
+            assert len(results) == 1
+            lead = results[0]
+            assert lead["company"] == "Zen Imports LLC"
+            assert lead["email"] == "contact@zenimports.com"
+            assert lead["source"] == "web_search"
+
 def test_valid_search_request_with_mocked_cse_api():
     mock_items = [
         {
