@@ -53,7 +53,9 @@ export const SendCampaign = () => {
   const [attachPdf, setAttachPdf] = useState(true);
 
   // Leads available for this campaign
+  const [allLeads, setAllLeads] = useState([]);
   const [eligibleLeads, setEligibleLeads] = useState([]);
+  const [excludedLeads, setExcludedLeads] = useState([]);
   const [selectedLeadIds, setSelectedLeadIds] = useState(new Set(location.state?.selectedLeadIds || []));
   
   // Single test recipient state
@@ -95,9 +97,13 @@ export const SendCampaign = () => {
       ]);
       setSystemData(dash?.system || {});
       
-      const allLeads = leadsRes?.leads || [];
-      const eligible = allLeads.filter(l => l.outreach_status === 'eligible');
+      const leadsList = leadsRes?.leads || [];
+      setAllLeads(leadsList);
+
+      const eligible = leadsList.filter(l => l.outreach_status === 'eligible');
+      const excluded = leadsList.filter(l => l.outreach_status !== 'eligible');
       setEligibleLeads(eligible);
+      setExcludedLeads(excluded);
 
       // If location.state didn't pass specific IDs, default to selecting all eligible
       if (!location.state?.selectedLeadIds || location.state.selectedLeadIds.length === 0) {
