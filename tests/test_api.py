@@ -267,3 +267,43 @@ def test_lead_update_invalid_email():
     })
     assert response.status_code == 422
 
+def test_single_lead_rest_lifecycle():
+    from leads.lead_service import LeadService
+    test_lead = LeadService.create_lead({
+        "company_name": "REST Test Sanctuary",
+        "email": "contact@resttest-sanctuary.com",
+        "country": "United States",
+        "buyer_type": "Distributor",
+        "syntax_valid": True,
+        "email_status": "valid",
+        "qualification_status": "qualified"
+    })
+    lead_id = test_lead["lead_id"]
+
+    # 1. GET
+    res_get = client.get(f"/api/leads/{lead_id}")
+    assert res_get.status_code == 200
+    assert res_get.json()["lead"]["company_name"] == "REST Test Sanctuary"
+
+    # 2. PATCH
+    res_patch = client.patch(f"/api/leads/{lead_id}", json={"country": "Canada"})
+    assert res_patch.status_code == 200
+    assert res_patch.json()["lead"]["country"] == "Canada"
+
+    # 3. DELETE
+    res_del = client.delete(f"/api/leads/{lead_id}")
+    assert res_del.status_code == 200
+    assert res_del.json()["success"] is True
+
+    # 4. GET after DELETE -> 404
+    res_get_after = client.get(f"/api/leads/{lead_id}")
+    assert res_get_after.status_code == 404
+
+def test_campaigns_list_endpoint():
+    response = client.get("/api/campaigns")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["success"] is True
+    assert "campaigns" in data
+
+

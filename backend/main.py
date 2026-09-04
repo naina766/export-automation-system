@@ -50,6 +50,8 @@ from outreach.gmail_sender import (
 from logging_module.activity_logger import ActivityLogger
 from reports.report_generator import ReportGenerator
 from products.catalog import ProductCatalog
+from leads.lead_service import LeadService, LeadState
+
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -330,7 +332,27 @@ async def get_all_leads(product_id: Optional[str] = None):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to read buyers: {str(e)}")
 
+@app.get("/api/leads/invalid")
+async def get_invalid_leads_endpoint():
+    """Returns leads that have invalid or missing emails or failed syntax check."""
+    if not BUYERS_CSV.exists():
+        return {"total": 0, "invalid_leads": []}
+    try:
+        df = pd.read_csv(BUYERS_CSV, dtype=str, encoding="utf-8").fillna("")
+        records = df.to_dict(orient="records")
+        invalid_list = [
+            r for r in records
+            if not r.get("email") or
+               r.get("email_status") in ["invalid", "missing"] or
+               str(r.get("syntax_valid", "")).lower() == "false" or
+               r.get("syntax_valid") is False
+        ]
+        return {"total": len(invalid_list), "invalid_leads": invalid_list}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to read invalid leads: {str(e)}")
+
 @app.get("/api/sample-buyers")
+
 async def get_sample_workflow_buyers(product_id: Optional[str] = None):
     """
     Returns explicitly labeled demonstration buyers for the sample workflow.
@@ -587,10 +609,44 @@ async def update_lead_endpoint(payload: UpdateLeadRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to update buyer: {str(e)}")
 
+@app.get("/api/leads/{lead_id}")
+async def get_single_lead_endpoint(lead_id: str):
+    """Retrieve details for a specific buyer lead."""
+    lead = LeadService.get_lead(lead_id)
+    if not lead:
+        raise HTTPException(status_code=404, detail=f"Lead with id '{lead_id}' not found.")
+    return {"success": True, "lead": lead}
+
+@app.patch("/api/leads/{lead_id}")
+async def patch_single_lead_endpoint(lead_id: str, payload: Dict[str, Any]):
+    """Partially update lead attributes and recalculate validation state."""
+    # If email is modified, revalidate
+    if "email" in payload and payload["email"]:
+        val_res = validate_email_address(payload["email"].strip())
+        if not val_res.get("syntax_valid"):
+            raise HTTPException(status_code=422, detail="Provided email failed syntax validation.")
+        payload["email_status"] = "valid"
+        payload["syntax_valid"] = "True"
+        payload["valid"] = "True"
+
+    updated = LeadService.update_lead(lead_id, payload)
+    if not updated:
+        raise HTTPException(status_code=404, detail=f"Lead with id '{lead_id}' not found.")
+    return {"success": True, "message": "Lead updated successfully.", "lead": updated}
+
+@app.delete("/api/leads/{lead_id}")
+async def delete_single_lead_endpoint(lead_id: str):
+    """Remove a buyer lead from storage."""
+    deleted = LeadService.delete_lead(lead_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail=f"Lead with id '{lead_id}' not found.")
+    return {"success": True, "message": "Lead deleted successfully."}
+
 
 @app.post("/api/discovery")
 @app.post("/api/search")
 async def discover_buyers_endpoint(payload: SearchRequest):
+
     """
     Discovers international export buyers through configured search API provider.
     Converts search results into structured buyer records without fake names.
@@ -756,6 +812,7 @@ async def upload_leads_csv(file: UploadFile = File(...)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to process CSV: {str(e)}")
 
+@app.post("/api/leads/validate")
 @app.post("/api/validation")
 @app.post("/api/validate")
 async def validate_single_email_endpoint(
@@ -810,8 +867,10 @@ async def get_classification_data(product_id: Optional[str] = None):
         "individual_leads": ind_leads
     }
 
+@app.post("/api/leads/classify")
 @app.post("/api/classify")
 async def run_classification(payload: Optional[ClassifyRequest] = None):
+
     pid = payload.product_id if payload else None
     pname = payload.product_name if payload else None
     success, status_code, msg, summary = LeadClassifier.execute_qualification(
@@ -832,9 +891,17 @@ async def run_classification(payload: Optional[ClassifyRequest] = None):
 # ==========================================
 # 7. CAMPAIGN DISPATCH
 # ==========================================
+@app.get("/api/campaigns")
+async def list_campaigns_endpoint(product_id: Optional[str] = None):
+    """List campaign statistics and activity history for active or selected product."""
+    metrics = ReportGenerator.get_campaign_metrics(product_id=product_id)
+    return {"success": True, "campaigns": metrics}
+
+@app.post("/api/campaigns")
 @app.post("/api/campaign")
 @app.post("/api/send")
 async def send_campaign(payload: SendCampaignRequest):
+
     # 1. Block demo data from entering live outreach
     if payload.audience.lower() == "demo" or (payload.custom_email and "-demo." in payload.custom_email.lower()):
         raise HTTPException(
