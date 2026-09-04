@@ -83,7 +83,7 @@ def test_normalize_lead_never_fabricates_missing_emails():
     }
     norm = normalize_lead(parsed, provider_source="google_cse")
     assert norm["email"] is None
-    assert norm["email_status"] == "not_found"
+    assert norm["email_status"] == "missing"
     assert norm["valid"] is False
     assert norm["company"] == "Alpine Meditations"
     assert norm["source"] == "google_cse"

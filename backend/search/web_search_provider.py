@@ -39,11 +39,16 @@ class SearchProviderAPIError(Exception):
     """Raised when the external search API fails, times out, or returns an error."""
     pass
 
+class UnsupportedSearchProviderError(Exception):
+    """Raised when an unrecognized search provider is configured."""
+    pass
+
 class WebBuyerSearchProvider(BuyerSearchProvider):
     """
     Production-grade Search Provider connecting to legitimate search APIs.
     Supported providers: serper, brave, tavily, serpapi, google_cse.
     """
+    SUPPORTED_PROVIDERS = {"serper", "brave", "tavily", "serpapi", "google_cse"}
 
     def __init__(self):
         config = get_search_provider_config()
@@ -54,8 +59,9 @@ class WebBuyerSearchProvider(BuyerSearchProvider):
     def is_configured(self) -> bool:
         """
         Check if required API credentials exist and are not unconfigured placeholder strings.
-        Does not assume Google CSE is available for all accounts.
         """
+        if self.provider not in self.SUPPORTED_PROVIDERS:
+            return False
         if not self.api_key:
             return False
         # Treat template placeholders as unconfigured
@@ -80,26 +86,27 @@ class WebBuyerSearchProvider(BuyerSearchProvider):
         keywords: Optional[Union[str, List[str]]] = None
     ) -> str:
         """Construct an optimized B2B query string."""
-        terms = [f'"{product.strip()}"'] if product else ['"Singing Bowls"']
-        
-        # Add buyer type intention
+        clean_product = (product or "Singing Bowls").strip()
+        terms = [f'"{clean_product}"']
+
+        # Buyer type intent
         if buyer_type and buyer_type.lower() not in ["all", "all buyer types", ""]:
             terms.append(f'("{buyer_type}" OR wholesale OR distributor OR importer)')
         else:
             terms.append('(wholesale OR distributor OR importer OR "sound healing studio")')
 
-        # Add target country
+        # Target country
         if country and country.lower() not in ["all", "all countries", ""]:
             terms.append(f'"{country.strip()}"')
 
-        # Add keywords (list or string)
+        # Keywords handling
         if keywords:
-            if isinstance(keywords, list):
+            if isinstance(keywords, str) and keywords.strip():
+                terms.append(keywords.strip())
+            elif isinstance(keywords, list):
                 kw_str = " ".join([f'"{k.strip()}"' if " " in k.strip() else k.strip() for k in keywords if k.strip()])
                 if kw_str:
                     terms.append(kw_str)
-            elif isinstance(keywords, str) and keywords.strip():
-                terms.append(keywords.strip())
 
         return " ".join(terms)
 
@@ -121,6 +128,11 @@ class WebBuyerSearchProvider(BuyerSearchProvider):
         self.provider = config.get("provider", "serper").lower()
         self.api_key = config.get("api_key", "")
         self.engine_id = config.get("engine_id", "")
+
+        if self.provider not in self.SUPPORTED_PROVIDERS:
+            raise UnsupportedSearchProviderError(
+                f"Unsupported search provider: {self.provider}. Supported: {', '.join(sorted(self.SUPPORTED_PROVIDERS))}"
+            )
 
         if not self.is_configured():
             if self.provider == "google_cse":

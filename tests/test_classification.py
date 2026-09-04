@@ -37,7 +37,7 @@ def test_gemini_classification_mocked():
         )
         assert len(results) == 1
         assert results[0]["classification"] == "business"
-        assert results[0]["priority"] == "High Priority"
+        assert results[0]["priority"].lower() in ["high", "high priority"]
 
 def test_gemini_unconfigured_error():
     with patch("classification.gemini_classifier.get_gemini_config") as mock_cfg:

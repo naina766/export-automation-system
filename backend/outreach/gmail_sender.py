@@ -1,6 +1,7 @@
 """
-Outreach Dispatch Module.
-Handles variable personalization, MIME attachment handling, and Gmail SMTP transport with retry resilience.
+Outreach Dispatch & Eligibility Module.
+Enforces authoritative outreach eligibility rules, product isolation, personalization,
+cumulative daily send limits, duplicate suppression, and resilient Gmail SMTP dispatch.
 """
 import re
 import time
@@ -9,7 +10,8 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 import sys
 from pathlib import Path
-from typing import List, Dict, Any, Tuple, Optional
+from datetime import datetime, timezone
+from typing import List, Dict, Any, Tuple, Optional, Set
 import pandas as pd
 
 BACKEND_DIR = Path(__file__).resolve().parent.parent
@@ -21,125 +23,153 @@ from config import (
     get_gmail_credentials,
     BUYERS_CSV,
     BUSINESS_EMAILS_CSV,
-    INDIVIDUAL_EMAILS_CSV
+    INDIVIDUAL_EMAILS_CSV,
+    SENT_LOG_CSV
 )
 from outreach.attachment_handler import AttachmentHandler
 from logging_module.activity_logger import ActivityLogger
 from validation.email_validator import EmailValidator, validate_email_address
 
-DEFAULT_SUBJECT = "Export Partnership: Himalayan Singing Bowls for {{company_name}}"
+DEFAULT_SUBJECT = "Export Supply Partnership: {{product_name}} for {{company_name}}"
 DEFAULT_BODY = """Hello {{contact_name}},
 
 I am reaching out regarding {{company_name}} in {{country}}.
 
-As an established exporter of authentic, hand-hammered {{product}}, we would be delighted to explore a wholesale supply partnership with your organization.
+As an established exporter of authentic, hand-crafted {{product_name}}, we would be delighted to explore a wholesale supply partnership with your organization.
 
 Please find our product catalog and export specifications attached.
 
 Best regards,
-Export Sales Team
-Himalayan Artisans Export Ltd."""
+Export Sales Team"""
+
+def is_outreach_eligible(
+    lead: Dict[str, Any],
+    campaign_product_id: Optional[str] = None,
+    contacted_emails: Optional[Set[str]] = None
+) -> Tuple[bool, str]:
+    """
+    Authoritative backend eligibility check.
+    A lead is eligible for outreach ONLY if ALL conditions are satisfied:
+    1. Lead exists and has a valid identifier
+    2. product_id matches campaign product_id (Product Isolation)
+    3. Email exists and email_status == 'valid'
+    4. qualification_status == 'qualified'
+    5. is_demo is False
+    6. Not already contacted in historical sent_log
+    """
+    if not lead:
+        return False, "Lead record is empty or missing"
+
+    lead_id = lead.get("lead_id") or lead.get("id")
+    if not lead_id:
+        return False, "Missing valid lead identifier"
+
+    # 1. Demo Data Safety Barrier
+    raw_demo = lead.get("is_demo", False)
+    is_demo = (raw_demo is True) or (str(raw_demo).lower().strip() in ["true", "1", "yes"])
+    if is_demo:
+        return False, "Demo buyer cannot enter live email outreach"
+
+    # 2. Product Isolation
+    if campaign_product_id:
+        lead_product_id = lead.get("product_id") or "himalayan-sound-healing-bowls"
+        if lead_product_id != campaign_product_id:
+            return False, f"Product mismatch: lead belongs to '{lead_product_id}', campaign is for '{campaign_product_id}'"
+
+    # 3. Email Availability & Syntax Validation
+    raw_email = str(lead.get("email", "") or "").strip()
+    if not raw_email or raw_email in ["none", "null", "undefined"]:
+        return False, "Missing email address"
+
+    email_status = str(lead.get("email_status", "")).lower().strip()
+    if email_status != "valid":
+        val_res = validate_email_address(raw_email)
+        if not val_res.get("syntax_valid"):
+            return False, f"Invalid email syntax: {val_res.get('reason', 'invalid')}"
+
+    # 4. AI Qualification Status
+    qual_status = str(lead.get("qualification_status", "")).lower().strip()
+    if qual_status != "qualified":
+        return False, f"Lead is not AI qualified (status: '{qual_status or 'pending'}')"
+
+    # 5. In-batch duplicate check
+    raw_dup = lead.get("is_duplicate", False)
+    if (raw_dup is True) or (str(raw_dup).lower().strip() in ["true", "1", "yes"]):
+        return False, "Duplicate lead record"
+
+    # 6. Historical Duplicate Outreach Suppression
+    if contacted_emails is None:
+        contacted_emails = EmailValidator.get_contacted_emails()
+    
+    clean_email = raw_email.lower()
+    raw_contacted = lead.get("already_contacted", False)
+    is_contacted = (raw_contacted is True) or (str(raw_contacted).lower().strip() in ["true", "1", "yes"])
+    if clean_email in contacted_emails or is_contacted:
+        return False, "Already contacted in a previous campaign"
+
+    return True, "Eligible"
 
 class EmailSender:
-    """Outreach campaign sender executing live Gmail SMTP with backoff retry resilience."""
+    """Outreach campaign sender executing live Gmail SMTP with limit enforcement and retry resilience."""
 
     @staticmethod
     def personalize_text(
         template: str,
-        buyer_name: str = "",
-        company_name: str = "",
-        country: str = "",
-        buyer_type: str = "",
-        product: str = ""
+        contact_name: Optional[str] = None,
+        company_name: Optional[str] = None,
+        country: Optional[str] = None,
+        buyer_type: Optional[str] = None,
+        product: Optional[str] = None,
+        buyer_name: Optional[str] = None
     ) -> str:
         """
-        Safely replace {{company_name}}, {{contact_name}}, {{buyer_name}}, {{country}},
-        {{buyer_type}}, {{product}} placeholders with clean fallbacks.
-        Ensures unresolved tags or undefined/null are sanitized.
+        Safely replaces placeholders:
+        {{company_name}}, {{contact_name}}, {{buyer_name}}, {{country}}, {{buyer_type}}, {{product_name}}, {{product}}
+        If contact_name is null/empty -> uses 'Company Team' (never 'undefined', 'null', 'Procurement Lead').
         """
-        clean_name = str(buyer_name).strip() if buyer_name and str(buyer_name).strip() else "Valued Partner"
-        clean_company = str(company_name).strip() if company_name and str(company_name).strip() else "your organization"
-        clean_country = str(country).strip() if country and str(country).strip() else "your region"
-        clean_type = str(buyer_type).strip() if buyer_type and str(buyer_type).strip() else "partner"
-        clean_product = str(product).strip() if product and str(product).strip() else "Himalayan Sound Healing Bowls"
+        raw_contact = contact_name or buyer_name
+        if raw_contact and str(raw_contact).strip() not in ["", "None", "null", "undefined", "Procurement Lead", "Purchasing Manager"]:
+            clean_name = str(raw_contact).strip()
+        else:
+            clean_name = "Company Team"
+
+        clean_company = str(company_name).strip() if company_name and str(company_name).strip() not in ["", "None", "null"] else "your organization"
+        clean_country = str(country).strip() if country and str(country).strip() not in ["", "None", "null"] else "your region"
+        clean_type = str(buyer_type).strip() if buyer_type and str(buyer_type).strip() not in ["", "None", "null"] else "partner"
+        clean_product = str(product).strip() if product and str(product).strip() not in ["", "None", "null"] else "Himalayan Sound Healing Bowls"
 
         text = template
-        text = text.replace("{{buyer_name}}", clean_name)
         text = text.replace("{{contact_name}}", clean_name)
+        text = text.replace("{{buyer_name}}", clean_name)
         text = text.replace("{{company_name}}", clean_company)
         text = text.replace("{{country}}", clean_country)
         text = text.replace("{{buyer_type}}", clean_type)
         text = text.replace("{{product_name}}", clean_product)
         text = text.replace("{{product}}", clean_product)
 
-        # Clean any stray unresolved double-brace tags
+        # Sanitize any stray unresolved double-brace tags
         text = re.sub(r"\{\{[a-zA-Z0-9_]+\}\}", "", text)
         return text
 
     @classmethod
-    def get_recipients_by_audience(
-        cls,
-        audience: str,
-        custom_recipient: Optional[Dict[str, str]] = None
-    ) -> List[Dict[str, Any]]:
-        """Fetch qualified recipients based on selected audience (business | individual | all | custom)."""
-        audience_lower = audience.lower()
-
-        # Handle direct custom recipient (Send Test Email)
-        if audience_lower == "custom":
-            if not custom_recipient:
-                return []
-            email = str(custom_recipient.get("email", "")).strip()
-            if not email:
-                return []
-            return [{
-                "name": str(custom_recipient.get("name", "")).strip() or "Valued Partner",
-                "company": str(custom_recipient.get("company", "")).strip() or "Partner Organization",
-                "email": email,
-                "country": str(custom_recipient.get("country", "")).strip() or "International",
-                "buyer_type": str(custom_recipient.get("buyer_type", "")).strip() or "Distributor",
-                "classification": "custom",
-                "email_status": "valid",
-                "is_duplicate": "False"
-            }]
-
-        target_csv = None
-        if audience_lower == "business" and BUSINESS_EMAILS_CSV.exists():
-            target_csv = BUSINESS_EMAILS_CSV
-        elif audience_lower == "individual" and INDIVIDUAL_EMAILS_CSV.exists():
-            target_csv = INDIVIDUAL_EMAILS_CSV
-        elif BUYERS_CSV.exists():
-            target_csv = BUYERS_CSV
-
-        if not target_csv or not target_csv.exists():
-            return []
-
+    def get_today_sent_count(cls) -> int:
+        """Calculate total successful email sends across all campaigns today."""
+        if not SENT_LOG_CSV.exists():
+            return 0
         try:
-            df = pd.read_csv(target_csv, dtype=str).fillna("")
-            if df.empty:
-                return []
-
-            # Exclude demo records from entering any campaign
-            if "is_demo" in df.columns:
-                df = df[df["is_demo"].astype(str).str.lower() != "true"]
-            if "email" in df.columns:
-                df = df[~df["email"].astype(str).str.lower().str.contains("-demo.")]
-
-            # Filter valid, non-duplicate emails
-            valid_mask = (df.get("email_status", "valid") == "valid") & \
-                         (df.get("is_duplicate", "False").astype(str).str.lower() != "true")
-
-            filtered = df[valid_mask]
-
-            if audience_lower == "business" and "classification" in filtered.columns:
-                filtered = filtered[filtered["classification"] == "business"]
-            elif audience_lower == "individual" and "classification" in filtered.columns:
-                filtered = filtered[filtered["classification"] == "individual"]
-
-            return filtered.to_dict(orient="records")
-        except Exception as e:
-            print(f"Error fetching recipients: {e}")
-            return []
+            df = pd.read_csv(SENT_LOG_CSV, dtype=str)
+            if df.empty or "timestamp" not in df.columns or "status" not in df.columns:
+                return 0
+            
+            today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+            # Filter rows from today with status == 'SENT'
+            sent_today = df[
+                (df["status"].astype(str).str.upper() == "SENT") &
+                (df["timestamp"].astype(str).str.startswith(today_str))
+            ]
+            return len(sent_today)
+        except Exception:
+            return 0
 
     @classmethod
     def _send_smtp_with_retry(
@@ -149,19 +179,13 @@ class EmailSender:
         smtp_user: str,
         smtp_pass: str,
         msg: MIMEMultipart,
-        max_retries: int = 3,
-        recipient: str = ""
+        max_retries: int = 2
     ) -> Tuple[bool, str]:
-        """
-        Transmits email over TLS port 587 with exponential backoff on transient errors.
-        Attempt 1 -> wait 1s -> Attempt 2 -> wait 2s -> Attempt 3 -> wait 4s.
-        """
+        """Core SMTP sending function with retry logic."""
         last_error = ""
-        backoff_delays = [1.0, 2.0, 4.0]
-
         for attempt in range(1, max_retries + 1):
             try:
-                server = smtplib.SMTP(smtp_host, smtp_port, timeout=15.0)
+                server = smtplib.SMTP(smtp_host, smtp_port, timeout=12)
                 server.ehlo()
                 server.starttls()
                 server.ehlo()
@@ -170,249 +194,263 @@ class EmailSender:
                 server.quit()
                 return True, "SENT"
             except smtplib.SMTPAuthenticationError as e:
-                return False, f"Gmail SMTP Authentication Error: {str(e)}"
-            except smtplib.SMTPRecipientsRefused as e:
-                return False, f"Recipient refused: {str(e)}"
-            except (smtplib.SMTPConnectError, smtplib.SMTPServerDisconnected, TimeoutError, ConnectionError) as e:
-                last_error = f"Network/Connection error (attempt {attempt}/{max_retries}): {str(e)}"
-                if attempt < max_retries:
-                    sleep_time = backoff_delays[min(attempt - 1, len(backoff_delays) - 1)]
-                    time.sleep(sleep_time)
+                return False, f"SMTP Authentication failed: Check your Gmail App Password. ({str(e)})"
             except Exception as e:
-                last_error = f"SMTP error (attempt {attempt}/{max_retries}): {str(e)}"
+                last_error = str(e)
                 if attempt < max_retries:
-                    sleep_time = backoff_delays[min(attempt - 1, len(backoff_delays) - 1)]
-                    time.sleep(sleep_time)
-
-        return False, last_error
+                    time.sleep(1.0)
+        return False, f"SMTP dispatch failed after {max_retries} attempts: {last_error}"
 
     @classmethod
-    def send_campaign(
+    def send_smtp_email(
         cls,
-        audience: str = "business",
-        subject: str = DEFAULT_SUBJECT,
-        body_template: str = DEFAULT_BODY,
-        attach_presentation: bool = True,
-        custom_recipient: Optional[Dict[str, str]] = None,
-        product_id: Optional[str] = None,
-        campaign_id: Optional[str] = None,
-        product_name: Optional[str] = None
-    ) -> Dict[str, Any]:
-        """Executes campaign outreach via Gmail SMTP with retry resilience and product awareness."""
-        from datetime import datetime
+        to_email: str,
+        subject: str,
+        body_text: str,
+        attachment_path: Optional[str] = None,
+        max_retries: int = 2
+    ) -> Tuple[bool, str]:
+        """Send email via Gmail SMTP with STARTTLS and retry resilience."""
+        gmail_user, gmail_pass = get_gmail_credentials()
         settings = load_settings()
-        max_emails = int(settings.get("MAX_EMAILS_PER_RUN", 25))
-        send_delay = float(settings.get("SEND_DELAY", 1))
         smtp_host = settings.get("SMTP_HOST", "smtp.gmail.com")
         smtp_port = int(settings.get("SMTP_PORT", 587))
 
-        # Resolve active product
-        resolved_prod_id = product_id or "himalayan-sound-healing-bowls"
-        resolved_product = product_name or settings.get("SEARCH_KEYWORD", "Himalayan Sound Healing Bowls")
+        if not gmail_user or not gmail_pass:
+            return False, "GMAIL_CREDENTIALS_MISSING: Please configure GMAIL_EMAIL and GMAIL_APP_PASSWORD in backend .env"
+
+        msg = MIMEMultipart()
+        msg["From"] = f"Export Outreach <{gmail_user}>"
+        msg["To"] = to_email
+        msg["Subject"] = subject
+        msg.attach(MIMEText(body_text, "plain", "utf-8"))
+
+        if attachment_path:
+            p = Path(attachment_path)
+            if p.exists() and p.is_file():
+                att = AttachmentHandler.get_mime_attachment(p)
+                if att:
+                    msg.attach(att)
+
+        success, status = cls._send_smtp_with_retry(
+            smtp_host=smtp_host,
+            smtp_port=smtp_port,
+            smtp_user=gmail_user,
+            smtp_pass=gmail_pass,
+            msg=msg,
+            max_retries=max_retries
+        )
+        return success, status
+
+    @classmethod
+    def execute_campaign(
+        cls,
+        product_id: str,
+        lead_ids: Optional[List[str]] = None,
+        subject_template: Optional[str] = None,
+        body_template: Optional[str] = None,
+        attach_presentation: bool = True,
+        catalog_path: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Execute campaign outreach for selected lead_ids.
+        Runs final backend validation on every recipient and enforces limits.
+        """
+        settings = load_settings()
+        daily_limit = int(settings.get("DAILY_SEND_LIMIT", 100))
+        max_per_run = int(settings.get("MAX_EMAILS_PER_RUN", 25))
+        send_delay = float(settings.get("SEND_DELAY", 1.0))
+
+        # Check daily cumulative send count
+        already_sent_today = cls.get_today_sent_count()
+        remaining_today = max(0, daily_limit - already_sent_today)
+        if remaining_today <= 0:
+            return {
+                "success": False,
+                "error": "DAILY_SEND_LIMIT_EXCEEDED",
+                "message": f"Daily email limit of {daily_limit} has been reached ({already_sent_today} sent today).",
+                "sent_today": already_sent_today,
+                "daily_limit": daily_limit,
+                "results": []
+            }
+
+        # Load buyers store
+        if not BUYERS_CSV.exists():
+            return {
+                "success": False,
+                "error": "NO_LEADS",
+                "message": "No buyer leads available in store.",
+                "results": []
+            }
+
+        try:
+            df = pd.read_csv(BUYERS_CSV, dtype=str).fillna("")
+        except Exception as e:
+            return {
+                "success": False,
+                "error": "STORE_READ_ERROR",
+                "message": f"Failed to read buyers store: {str(e)}",
+                "results": []
+            }
+
+        # Filter by lead_ids if provided, otherwise filter all eligible leads for this product
+        if lead_ids:
+            target_df = df[df["lead_id"].isin(lead_ids) | df["id"].isin(lead_ids)].copy()
+        else:
+            target_df = df[df["product_id"] == product_id].copy()
+
+        if target_df.empty:
+            return {
+                "success": False,
+                "error": "NO_MATCHING_LEADS",
+                "message": "No matching leads found for this campaign.",
+                "results": []
+            }
+
+        # Resolve active product details
         try:
             from products.catalog import ProductCatalog
-            if product_id:
-                prod = ProductCatalog.get_product(product_id)
-                if prod:
-                    resolved_product = prod.get("name", resolved_product)
-                    resolved_prod_id = prod.get("id", resolved_prod_id)
-            else:
-                prod = ProductCatalog.get_active_product()
-                if prod:
-                    resolved_product = prod.get("name", resolved_product)
-                    resolved_prod_id = prod.get("id", resolved_prod_id)
+            prod = ProductCatalog.get_product(product_id) or ProductCatalog.get_active_product()
+            prod_name = prod.get("name", "Himalayan Sound Healing Bowls")
+            pdf_path = catalog_path or prod.get("catalog_path")
         except Exception:
-            pass
+            prod_name = "Himalayan Sound Healing Bowls"
+            pdf_path = catalog_path
 
-        active_campaign_id = campaign_id or f"campaign_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        attachment_file = pdf_path if attach_presentation else None
+        subject_tpl = subject_template or DEFAULT_SUBJECT
+        body_tpl = body_template or DEFAULT_BODY
 
-        recipients = cls.get_recipients_by_audience(audience, custom_recipient)
         contacted_set = EmailValidator.get_contacted_emails()
+        results = []
+        successful_sends = 0
+        skipped_count = 0
+        failed_count = 0
 
-        results = {
-            "mode": "SMTP",
-            "audience": audience,
-            "campaign_id": active_campaign_id,
-            "product_id": resolved_prod_id,
-            "product_name": resolved_product,
-            "total_targeted": len(recipients),
-            "sent_count": 0,
-            "failed_count": 0,
-            "skipped_duplicates": 0,
-            "previews": [],
-            "messages": []
-        }
+        for _, row in target_df.iterrows():
+            lead_dict = row.to_dict()
+            lead_id = lead_dict.get("lead_id") or lead_dict.get("id")
+            recipient_email = lead_dict.get("email")
 
-        if audience == "demo":
-            results["messages"].append("Demo data cannot be sent live outreach.")
-            return results
+            # Final authoritative eligibility check
+            is_eligible, reason = is_outreach_eligible(
+                lead=lead_dict,
+                campaign_product_id=product_id,
+                contacted_emails=contacted_set
+            )
 
-        if not recipients:
-            results["messages"].append(f"No qualified recipients found for target '{audience}'.")
-            return results
-
-        # Check Gmail SMTP credentials
-        smtp_user, smtp_pass = get_gmail_credentials()
-        if not smtp_user or not smtp_pass:
-            err_msg = "Gmail credentials not configured. Please set GMAIL_EMAIL and GMAIL_APP_PASSWORD in the backend environment."
-            results["messages"].append(err_msg)
-            results["failed_count"] = len(recipients)
-            return results
-
-        # Verify attachment if enabled
-        if attach_presentation:
-            exists, fname, size = AttachmentHandler.get_presentation_status()
-            if not exists:
-                err_msg = f"Attachment required but presentation PDF is missing from assets/ ({fname})."
-                results["messages"].append(err_msg)
-                results["failed_count"] = len(recipients)
-                return results
-
-        # Enforce batch limit (only for bulk audience pools, custom is single)
-        recipients_to_send = recipients[:max_emails] if audience != "custom" else recipients
-        if len(recipients) > max_emails and audience != "custom":
-            results["messages"].append(f"Batch limit applied: dispatching {max_emails} of {len(recipients)} leads.")
-
-        for idx, buyer in enumerate(recipients_to_send):
-            raw_email = str(buyer.get("email", "")).strip().lower()
-            buyer_name = str(buyer.get("name", "")).strip() or "Valued Partner"
-            company_name = str(buyer.get("company", "")).strip() or "Partner Organization"
-            country_val = str(buyer.get("country", "")).strip() or "International"
-            classification = str(buyer.get("classification", audience)).strip()
-
-            is_test_send = (audience.lower() == "custom")
-            dispatch_mode = "SMTP_TEST" if is_test_send else "SMTP"
-            campaign_title = "SMTP Test" if is_test_send else f"{resolved_product} Outreach"
-
-            # Syntax validation check for single/custom
-            if audience == "custom":
-                val_res = validate_email_address(raw_email)
-                if not val_res.get("valid", False):
-                    err_msg = f"Invalid email syntax/domain: {val_res.get('reason', 'Failed validation')}"
-                    ActivityLogger.log_send_event(
-                        buyer_name=buyer_name,
-                        company=company_name,
-                        email=raw_email,
-                        status="INVALID_EMAIL",
-                        mode=dispatch_mode,
-                        classification="custom",
-                        campaign=campaign_title,
-                        error=err_msg,
-                        product_id=resolved_prod_id,
-                        campaign_id=active_campaign_id
-                    )
-                    results["failed_count"] += 1
-                    results["messages"].append(err_msg)
-                    continue
-
-            # Duplicate / Already contacted check (only for bulk campaigns, not single custom test dispatch)
-            if audience != "custom" and raw_email in contacted_set:
-                ActivityLogger.log_send_event(
-                    buyer_name=buyer_name,
-                    company=company_name,
-                    email=raw_email,
-                    status="SKIPPED_DUPLICATE",
-                    mode=dispatch_mode,
-                    classification=classification,
-                    campaign=campaign_title,
-                    error="Already contacted in a previous campaign",
-                    product_id=resolved_prod_id,
-                    campaign_id=active_campaign_id
-                )
-                results["skipped_duplicates"] += 1
+            if not is_eligible:
+                results.append({
+                    "lead_id": lead_id,
+                    "company_name": lead_dict.get("company_name", lead_dict.get("company", "")),
+                    "recipient": recipient_email,
+                    "status": "rejected",
+                    "reason": reason
+                })
+                skipped_count += 1
                 continue
 
-            buyer_type = str(buyer.get("buyer_type", buyer.get("category", "Distributor"))).strip()
+            # Check run and daily limits
+            if successful_sends >= max_per_run:
+                results.append({
+                    "lead_id": lead_id,
+                    "company_name": lead_dict.get("company_name", lead_dict.get("company", "")),
+                    "recipient": recipient_email,
+                    "status": "rejected",
+                    "reason": f"Campaign max per run limit ({max_per_run}) reached"
+                })
+                skipped_count += 1
+                continue
 
-            # Personalize subject & body with product awareness
-            personalized_subject = cls.personalize_text(
-                subject,
-                buyer_name=buyer_name,
-                company_name=company_name,
-                country=country_val,
-                buyer_type=buyer_type,
-                product=resolved_product
+            if (already_sent_today + successful_sends) >= daily_limit:
+                results.append({
+                    "lead_id": lead_id,
+                    "company_name": lead_dict.get("company_name", lead_dict.get("company", "")),
+                    "recipient": recipient_email,
+                    "status": "rejected",
+                    "reason": f"Daily send limit ({daily_limit}) reached"
+                })
+                skipped_count += 1
+                continue
+
+            # Personalize content
+            sub = cls.personalize_text(
+                subject_tpl,
+                contact_name=lead_dict.get("contact_name"),
+                buyer_name=lead_dict.get("buyer_name"),
+                company_name=lead_dict.get("company_name", lead_dict.get("company")),
+                country=lead_dict.get("country"),
+                buyer_type=lead_dict.get("buyer_type"),
+                product=prod_name
             )
-            personalized_body = cls.personalize_text(
-                body_template,
-                buyer_name=buyer_name,
-                company_name=company_name,
-                country=country_val,
-                buyer_type=buyer_type,
-                product=resolved_product
+
+            body = cls.personalize_text(
+                body_tpl,
+                contact_name=lead_dict.get("contact_name"),
+                buyer_name=lead_dict.get("buyer_name"),
+                company_name=lead_dict.get("company_name", lead_dict.get("company")),
+                country=lead_dict.get("country"),
+                buyer_type=lead_dict.get("buyer_type"),
+                product=prod_name
             )
 
-            try:
-                msg = MIMEMultipart()
-                msg["From"] = smtp_user
-                msg["To"] = raw_email
-                msg["Subject"] = personalized_subject
-                msg.attach(MIMEText(personalized_body, "plain", "utf-8"))
+            # Execute Gmail SMTP Send
+            success, error_msg = cls.send_smtp_email(
+                to_email=recipient_email,
+                subject=sub,
+                body_text=body,
+                attachment_path=attachment_file
+            )
 
-                if attach_presentation:
-                    part = AttachmentHandler.create_mime_attachment()
-                    if part:
-                        msg.attach(part)
+            status_str = "SENT" if success else "FAILED"
+            now_iso = datetime.now(timezone.utc).isoformat()
 
-                success, smtp_msg = cls._send_smtp_with_retry(
-                    smtp_host=smtp_host,
-                    smtp_port=smtp_port,
-                    smtp_user=smtp_user,
-                    smtp_pass=smtp_pass,
-                    msg=msg,
-                    recipient=raw_email
-                )
+            ActivityLogger.log_activity(
+                buyer_name=lead_dict.get("contact_name") or "Company Team",
+                company=lead_dict.get("company_name", lead_dict.get("company", "")),
+                email=recipient_email,
+                classification=lead_dict.get("buyer_type", "Distributor"),
+                mode="SMTP",
+                status=status_str,
+                error=error_msg if not success else "",
+                campaign=prod_name
+            )
 
-                if success:
-                    ActivityLogger.log_send_event(
-                        buyer_name=buyer_name,
-                        company=company_name,
-                        email=raw_email,
-                        status="SENT",
-                        mode=dispatch_mode,
-                        classification=classification,
-                        campaign=campaign_title,
-                        error="",
-                        product_id=resolved_prod_id,
-                        campaign_id=active_campaign_id
-                    )
-                    results["sent_count"] += 1
-                    contacted_set.add(raw_email)
-                else:
-                    ActivityLogger.log_send_event(
-                        buyer_name=buyer_name,
-                        company=company_name,
-                        email=raw_email,
-                        status="FAILED",
-                        mode=dispatch_mode,
-                        classification=classification,
-                        campaign=campaign_title,
-                        error=smtp_msg,
-                        product_id=resolved_prod_id,
-                        campaign_id=active_campaign_id
-                    )
-                    results["failed_count"] += 1
-                    results["messages"].append(f"{raw_email}: {smtp_msg}")
+            if success:
+                successful_sends += 1
+                contacted_set.add(recipient_email.lower())
+                # Update buyers store to mark already_contacted
+                for idx, r_row in df.iterrows():
+                    if (r_row.get("lead_id") == lead_id) or (r_row.get("id") == lead_id) or (r_row.get("email") == recipient_email):
+                        df.at[idx, "already_contacted"] = "True"
+                        df.at[idx, "outreach_status"] = "sent"
+                        break
+            else:
+                failed_count += 1
+                for idx, r_row in df.iterrows():
+                    if (r_row.get("lead_id") == lead_id) or (r_row.get("id") == lead_id) or (r_row.get("email") == recipient_email):
+                        df.at[idx, "outreach_status"] = "failed"
+                        break
 
-            except Exception as e:
-                err_str = str(e)
-                ActivityLogger.log_send_event(
-                    buyer_name=buyer_name,
-                    company=company_name,
-                    email=raw_email,
-                    status="FAILED",
-                    mode=dispatch_mode,
-                    classification=classification,
-                    campaign=campaign_title,
-                    error=err_str,
-                    product_id=resolved_prod_id,
-                    campaign_id=active_campaign_id
-                )
-                results["failed_count"] += 1
-                results["messages"].append(f"{raw_email}: {err_str}")
+            results.append({
+                "lead_id": lead_id,
+                "company_name": lead_dict.get("company_name", lead_dict.get("company", "")),
+                "recipient": recipient_email,
+                "status": "sent" if success else "failed",
+                "error": error_msg if not success else None,
+                "timestamp": now_iso
+            })
 
-            # Safe inter-message delay
-            if idx < len(recipients_to_send) - 1 and send_delay > 0:
+            if send_delay > 0:
                 time.sleep(send_delay)
 
-        return results
+        df.to_csv(BUYERS_CSV, index=False)
+
+        return {
+            "success": True,
+            "total_targeted": len(target_df),
+            "dispatched": successful_sends,
+            "failed": failed_count,
+            "skipped": skipped_count,
+            "results": results
+        }

@@ -52,6 +52,47 @@ def clean_company_name(title: str, domain: str) -> str:
         
     return candidate[:50]
 
+import ipaddress
+import socket
+
+def is_safe_url(url: str) -> bool:
+    """Validate that a URL is a public web resource and block SSRF targets."""
+    if not url:
+        return False
+    try:
+        parsed = urlparse(url)
+        if parsed.scheme not in ["http", "https"]:
+            return False
+        
+        hostname = parsed.hostname
+        if not hostname:
+            return False
+            
+        hostname_lower = hostname.lower()
+        if hostname_lower in ["localhost", "0.0.0.0", "127.0.0.1", "metadata.google.internal", "instance-data"]:
+            return False
+            
+        if hostname_lower.endswith((".local", ".internal", ".localhost", ".localdomain")):
+            return False
+
+        # Resolve IP addresses and check for private / loopback / link-local / metadata ranges
+        addr_info = socket.getaddrinfo(hostname, None)
+        for entry in addr_info:
+            ip_str = entry[4][0]
+            ip_obj = ipaddress.ip_address(ip_str)
+            if (
+                ip_obj.is_private
+                or ip_obj.is_loopback
+                or ip_obj.is_link_local
+                or ip_obj.is_reserved
+                or ip_obj.is_multicast
+                or str(ip_obj) == "169.254.169.254"
+            ):
+                return False
+        return True
+    except Exception:
+        return False
+
 def parse_search_item(item: Dict[str, Any], query_country: Optional[str] = None, query_buyer_type: Optional[str] = None) -> Dict[str, Any]:
     """Parse raw search item into structured business lead attributes."""
     title = str(item.get("title", "")).strip()
@@ -91,8 +132,8 @@ def parse_search_item(item: Dict[str, Any], query_country: Optional[str] = None,
         "website": f"https://{domain}" if domain else url,
         "country": detected_country,
         "buyer_type": buyer_type,
-        "contact_name": "Procurement Lead",
-        "email": discovered_email,
+        "contact_name": None,  # NEVER fabricate contact names; null if not explicitly found
+        "email": discovered_email if discovered_email else None,
         "phone": discovered_phone,
         "snippet": snippet,
         "source_url": url,
@@ -102,9 +143,10 @@ def parse_search_item(item: Dict[str, Any], query_country: Optional[str] = None,
 async def extract_contact_from_public_website(website_url: str, client: httpx.AsyncClient) -> Dict[str, Optional[str]]:
     """
     Politely inspects public website contact or about page for publicly listed emails.
+    Protected with SSRF validation, bounded timeouts, and strict content checks.
     Never fabricates data; returns None if not found or unreachable.
     """
-    if not website_url or not website_url.startswith("http"):
+    if not website_url or not is_safe_url(website_url):
         return {"email": None, "phone": None}
 
     parsed = urlparse(website_url)
@@ -112,15 +154,17 @@ async def extract_contact_from_public_website(website_url: str, client: httpx.As
     targets = [f"{base_url}/contact", f"{base_url}/about"]
 
     for target in targets:
+        if not is_safe_url(target):
+            continue
         try:
             resp = await client.get(
                 target,
-                timeout=2.0,
+                timeout=3.0,
                 headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"},
                 follow_redirects=True
             )
             if resp.status_code == 200:
-                html = resp.text
+                html = resp.text[:100000]  # Bound response payload size
                 mailto_match = re.search(r'mailto:([a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+)', html, re.I)
                 if mailto_match:
                     found = mailto_match.group(1).lower()

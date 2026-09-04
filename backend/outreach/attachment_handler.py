@@ -23,22 +23,26 @@ class AttachmentHandler:
         return False, "company_presentation.pdf (Missing)", 0
 
     @classmethod
-    def create_mime_attachment(cls) -> Optional[MIMEBase]:
-        """Create MIME attachment part for email if file exists."""
-        exists, _, _ = cls.get_presentation_status()
-        if not exists:
+    def get_mime_attachment(cls, file_path: Optional[Path] = None) -> Optional[MIMEBase]:
+        """Create MIME attachment part for given path or default presentation PDF."""
+        target = Path(file_path) if file_path else COMPANY_PRESENTATION_PDF
+        if not target.exists() or not target.is_file():
             return None
-
         try:
-            with open(COMPANY_PRESENTATION_PDF, "rb") as f:
+            with open(target, "rb") as f:
                 part = MIMEBase("application", "pdf")
                 part.set_payload(f.read())
             encoders.encode_base64(part)
             part.add_header(
                 "Content-Disposition",
-                f'attachment; filename="{COMPANY_PRESENTATION_PDF.name}"'
+                f'attachment; filename="{target.name}"'
             )
             return part
         except Exception as e:
-            print(f"Error preparing presentation attachment: {e}")
+            print(f"Error preparing MIME attachment: {e}")
             return None
+
+    @classmethod
+    def create_mime_attachment(cls) -> Optional[MIMEBase]:
+        """Create MIME attachment part for email if file exists."""
+        return cls.get_mime_attachment(COMPANY_PRESENTATION_PDF)

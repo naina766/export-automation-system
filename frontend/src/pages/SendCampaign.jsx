@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { 
   Send, 
   Mail, 
@@ -8,16 +8,20 @@ import {
   Eye, 
   ShieldCheck, 
   AlertTriangle, 
-  CheckCircle2,
-  Sparkles,
-  ArrowRight,
-  UserCheck,
-  X,
-  Lock,
-  Clock,
-  FileCheck,
-  ShieldAlert,
-  Package
+  CheckCircle2, 
+  Sparkles, 
+  ArrowRight, 
+  UserCheck, 
+  X, 
+  Lock, 
+  Clock, 
+  FileCheck, 
+  ShieldAlert, 
+  Package,
+  Building2,
+  MapPin,
+  RefreshCw,
+  Check
 } from 'lucide-react';
 import apiService from '../services/api';
 import { useProduct } from '../context/ProductContext';
@@ -40,11 +44,33 @@ Export Sales Team`;
 
 export const SendCampaign = () => {
   const navigate = useNavigate();
-  const { selectedProduct, setSelectedProduct, products } = useProduct();
-  const [audience, setAudience] = useState('business');
+  const location = useLocation();
+  const { selectedProduct, products } = useProduct();
+
   const [subject, setSubject] = useState(selectedProduct?.email_subject_template || DEFAULT_SUBJECT);
   const [body, setBody] = useState(selectedProduct?.email_body_template || DEFAULT_BODY);
   const [attachPdf, setAttachPdf] = useState(true);
+
+  // Leads available for this campaign
+  const [eligibleLeads, setEligibleLeads] = useState([]);
+  const [selectedLeadIds, setSelectedLeadIds] = useState(new Set(location.state?.selectedLeadIds || []));
+  
+  // Single test recipient state
+  const [isTestMode, setIsTestMode] = useState(false);
+  const [customRecipient, setCustomRecipient] = useState({
+    email: '',
+    name: '',
+    company: '',
+    country: '',
+    buyer_type: ''
+  });
+  
+  const [systemData, setSystemData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [sending, setSending] = useState(false);
+  const [showReviewModal, setShowReviewModal] = useState(false);
+  const [results, setResults] = useState(null);
+  const [notification, setNotification] = useState({ type: '', message: '' });
 
   // Synchronize when selectedProduct updates
   useEffect(() => {
@@ -58,32 +84,24 @@ export const SendCampaign = () => {
     }
   }, [selectedProduct]);
 
-  // Single test recipient state
-  const [customRecipient, setCustomRecipient] = useState({
-    email: '',
-    name: '',
-    company: '',
-    country: '',
-    buyer_type: ''
-  });
-  
-  const [systemData, setSystemData] = useState(null);
-  const [classData, setClassData] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [sending, setSending] = useState(false);
-  const [showConfirmModal, setShowConfirmModal] = useState(false);
-  const [results, setResults] = useState(null);
-  const [notification, setNotification] = useState({ type: '', message: '' });
-
+  // Load leads and system configuration
   const fetchData = async () => {
     try {
       setLoading(true);
-      const [dash, cls] = await Promise.all([
-        apiService.getDashboard(),
-        apiService.getClassification()
+      const [dash, leadsRes] = await Promise.all([
+        apiService.getDashboard(selectedProduct?.id),
+        apiService.getLeads(selectedProduct?.id)
       ]);
       setSystemData(dash?.system || {});
-      setClassData(cls || {});
+      
+      const allLeads = leadsRes?.leads || [];
+      const eligible = allLeads.filter(l => l.outreach_status === 'eligible');
+      setEligibleLeads(eligible);
+
+      // If location.state didn't pass specific IDs, default to selecting all eligible
+      if (!location.state?.selectedLeadIds || location.state.selectedLeadIds.length === 0) {
+        setSelectedLeadIds(new Set(eligible.map(l => l.lead_id || l.id)));
+      }
     } catch (err) {
       setNotification({
         type: 'error',
@@ -96,121 +114,149 @@ export const SendCampaign = () => {
 
   useEffect(() => {
     fetchData();
-  }, []);
+  }, [selectedProduct?.id]);
 
   const gmailConfigured = systemData?.gmail_configured;
-  const targetProduct = systemData?.search_keyword || 'Himalayan Sound Healing Bowls';
+  const currentProductName = selectedProduct?.name || 'Himalayan Sound Healing Bowls';
 
-  // Calculate targeted count
-  const getTargetCount = () => {
-    if (audience === 'custom') return customRecipient.email.trim() ? 1 : 0;
-    if (audience === 'business') return classData?.business_count || 0;
-    if (audience === 'individual') return classData?.individual_count || 0;
-    return (classData?.business_count || 0) + (classData?.individual_count || 0);
+  // Toggle selection for a lead in campaign
+  const toggleSelectLead = (id) => {
+    setSelectedLeadIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
   };
 
-  // Preview lead selection from actual classified data or neutral fallbacks
-  const firstLead = (classData?.business_leads && classData.business_leads[0]) || (classData?.leads && classData.leads[0]) || {};
-  const previewLead = audience === 'custom' ? {
-    name: customRecipient.name.trim() || 'Valued Partner',
-    company: customRecipient.company.trim() || 'Partner Organization',
+  // Preview lead selection
+  const targetedLeads = eligibleLeads.filter(l => selectedLeadIds.has(l.lead_id || l.id));
+  const previewLead = isTestMode ? {
+    contact_name: customRecipient.name.trim() || 'Valued Partner',
+    company_name: customRecipient.company.trim() || 'Partner Organization',
     country: customRecipient.country.trim() || 'International',
     buyer_type: customRecipient.buyer_type.trim() || 'Wholesale Buyer',
     email: customRecipient.email.trim() || 'partner@organization.com'
-  } : {
-    name: firstLead.name || firstLead.buyer_name || 'Valued Partner',
-    company: firstLead.company || firstLead.company_name || 'Partner Organization',
-    country: firstLead.country || 'International',
-    buyer_type: firstLead.buyer_type || 'Wholesale Buyer',
-    email: firstLead.email || 'partner@organization.com'
-  };
+  } : (targetedLeads[0] || {
+    contact_name: 'Company Team',
+    company_name: 'Targeted Buyer LLC',
+    country: 'United States',
+    buyer_type: 'Distributor',
+    email: 'procurement@buyer.com'
+  });
 
-  const currentProductName = selectedProduct?.name || targetProduct;
+  const previewContact = previewLead.contact_name || 'Company Team';
+  const previewCompany = previewLead.company_name || previewLead.company || 'your organization';
+  const previewCountry = previewLead.country || 'your region';
+  const previewType = previewLead.buyer_type || 'partner';
 
   const previewSubject = subject
-    .replace(/\{\{buyer_name\}\}/g, previewLead.name)
-    .replace(/\{\{contact_name\}\}/g, previewLead.name)
-    .replace(/\{\{company_name\}\}/g, previewLead.company)
-    .replace(/\{\{country\}\}/g, previewLead.country)
-    .replace(/\{\{buyer_type\}\}/g, previewLead.buyer_type)
+    .replace(/\{\{contact_name\}\}/g, previewContact)
+    .replace(/\{\{buyer_name\}\}/g, previewContact)
+    .replace(/\{\{company_name\}\}/g, previewCompany)
+    .replace(/\{\{country\}\}/g, previewCountry)
+    .replace(/\{\{buyer_type\}\}/g, previewType)
     .replace(/\{\{product_name\}\}/g, currentProductName)
     .replace(/\{\{product\}\}/g, currentProductName);
 
   const previewBody = body
-    .replace(/\{\{buyer_name\}\}/g, previewLead.name)
-    .replace(/\{\{contact_name\}\}/g, previewLead.name)
-    .replace(/\{\{company_name\}\}/g, previewLead.company)
-    .replace(/\{\{country\}\}/g, previewLead.country)
-    .replace(/\{\{buyer_type\}\}/g, previewLead.buyer_type)
+    .replace(/\{\{contact_name\}\}/g, previewContact)
+    .replace(/\{\{buyer_name\}\}/g, previewContact)
+    .replace(/\{\{company_name\}\}/g, previewCompany)
+    .replace(/\{\{country\}\}/g, previewCountry)
+    .replace(/\{\{buyer_type\}\}/g, previewType)
     .replace(/\{\{product_name\}\}/g, currentProductName)
     .replace(/\{\{product\}\}/g, currentProductName);
 
-  const handleOpenDispatchModal = () => {
+  const handleOpenReview = () => {
     if (!gmailConfigured) {
       setNotification({
-        type: 'error',
-        message: 'Email service connection required. Please connect your email account in Settings.'
+        type: 'warning',
+        message: 'Gmail SMTP credentials are not configured. Please configure GMAIL_EMAIL and GMAIL_APP_PASSWORD in Settings or .env.'
       });
       return;
     }
-    if (!subject.trim() || !body.trim()) {
-      setNotification({ type: 'error', message: 'Subject and Message cannot be empty.' });
-      return;
+
+    if (isTestMode) {
+      if (!customRecipient.email.trim()) {
+        setNotification({ type: 'warning', message: 'Please provide a valid test recipient email address.' });
+        return;
+      }
+    } else {
+      if (selectedLeadIds.size === 0) {
+        setNotification({ type: 'warning', message: 'Please select at least one outreach-eligible buyer for this campaign.' });
+        return;
+      }
     }
-    if (audience === 'custom' && !customRecipient.email.trim()) {
-      setNotification({ type: 'error', message: 'Please enter a target email address for the test email.' });
-      return;
-    }
-    setShowConfirmModal(true);
+
+    setShowReviewModal(true);
   };
 
-  const handleConfirmAndSend = async () => {
-    setShowConfirmModal(false);
+  const handleExecuteSend = async () => {
     try {
       setSending(true);
+      setShowReviewModal(false);
       setNotification({ type: '', message: '' });
-      setResults(null);
 
-      const payload = {
-        product_id: selectedProduct?.id,
-        audience,
-        subject,
-        body_template: body,
-        attach_presentation: attachPdf,
-        custom_email: audience === 'custom' ? customRecipient.email.trim() : undefined,
-        custom_buyer_name: audience === 'custom' ? customRecipient.name.trim() : undefined,
-        custom_company_name: audience === 'custom' ? customRecipient.company.trim() : undefined,
-        custom_country: audience === 'custom' ? customRecipient.country.trim() : undefined,
-        custom_buyer_type: audience === 'custom' ? customRecipient.buyer_type.trim() : undefined,
-      };
-
-      const res = await apiService.sendCampaign(payload);
-      setResults(res.results);
-
-      if (res.results?.sent_count > 0) {
-        setNotification({
-          type: 'success',
-          message: `Outreach completed! Dispatched ${res.results.sent_count} personalized email(s).`
+      let res;
+      if (isTestMode) {
+        const payload = {
+          product_id: selectedProduct?.id,
+          recipient_email: customRecipient.email.trim(),
+          recipient_name: customRecipient.name.trim() || 'Test Partner',
+          company_name: customRecipient.company.trim() || 'Test Enterprise',
+          country: customRecipient.country.trim() || 'International',
+          buyer_type: customRecipient.buyer_type.trim() || 'Distributor',
+          subject,
+          body_template: body,
+          attach_presentation: attachPdf
+        };
+        res = await apiService.sendTestEmail(payload);
+        setResults({
+          dispatched: res.dispatched || 1,
+          failed: res.failed || 0,
+          results: [{
+            recipient: customRecipient.email.trim(),
+            company_name: customRecipient.company.trim() || 'Test Enterprise',
+            status: res.success ? 'sent' : 'failed',
+            error: res.error
+          }]
         });
       } else {
-        setNotification({
-          type: 'warning',
-          message: 'Outreach run completed. ' + (res.results?.messages?.join(' ') || '')
-        });
+        const payload = {
+          product_id: selectedProduct?.id,
+          lead_ids: Array.from(selectedLeadIds),
+          subject,
+          body_template: body,
+          attach_presentation: attachPdf
+        };
+        res = await apiService.sendCampaign(payload);
+        setResults(res.results || {});
       }
+
+      setNotification({
+        type: 'success',
+        message: `Campaign dispatch completed: ${res.results?.dispatched || res.dispatched || 1} emails sent successfully.`
+      });
+
+      // Refresh lead status
+      fetchData();
     } catch (err) {
       setNotification({
         type: 'error',
-        message: formatBusinessError(err, 'Unable to send outreach campaign. Please check your email connection and try again.')
+        message: formatBusinessError(err, 'Campaign dispatch failed.')
       });
     } finally {
       setSending(false);
     }
   };
 
-  if (loading) return <LoadingSpinner text="Preparing outreach dashboard..." />;
-
-  const targetCount = getTargetCount();
+  if (loading) {
+    return <LoadingSpinner text="Loading campaign parameters and eligible buyers..." />;
+  }
 
   return (
     <div className="space-y-6">
@@ -220,433 +266,354 @@ export const SendCampaign = () => {
         onClose={() => setNotification({ type: '', message: '' })}
       />
 
-      {/* Campaign Step Indicator */}
-      <div className="flex items-center justify-between bg-[#0B1220] border border-[#1E293B] rounded-xl p-3.5 overflow-x-auto gap-2 shadow-sm">
-        {[
-          { num: 1, label: 'Select Recipients' },
-          { num: 2, label: 'Compose Message' },
-          { num: 3, label: 'Personalization' },
-          { num: 4, label: 'Review & Launch' },
-          { num: 5, label: 'Results' },
-        ].map((step, idx) => (
-          <div key={step.num} className="flex items-center gap-2 flex-shrink-0">
-            <span className="w-6 h-6 rounded-full bg-purple-500/10 border border-purple-500/30 text-purple-400 text-xs font-bold flex items-center justify-center">
-              {step.num}
-            </span>
-            <span className="text-xs font-semibold text-slate-300 whitespace-nowrap">{step.label}</span>
-            {idx < 4 && <ArrowRight className="w-3.5 h-3.5 text-slate-600 mx-2" />}
+      {/* Header */}
+      <div className="p-5 rounded-2xl border border-[#1E293B] bg-[#0B1220] flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-xl">
+        <div className="flex items-center gap-3.5">
+          <div className="p-3 rounded-xl bg-purple-500/10 text-purple-400 border border-purple-500/20">
+            <Send className="w-6 h-6" />
           </div>
-        ))}
-      </div>
+          <div>
+            <h1 className="text-base sm:text-lg font-bold text-[#F8FAFC]">Campaign Outreach Dispatcher</h1>
+            <p className="text-xs text-[#94A3B8] mt-0.5">
+              Personalized B2B email outreach with Gmail SMTP transport and product isolation.
+            </p>
+          </div>
+        </div>
 
-      {/* Email Account Readiness Banner */}
-      {!gmailConfigured ? (
-        <div className="p-4 rounded-xl border border-rose-500/40 bg-rose-950/40 text-rose-200 flex items-center justify-between gap-4 text-xs font-medium">
-          <div className="flex items-center gap-3">
-            <ShieldAlert className="w-5 h-5 text-rose-400 flex-shrink-0" />
-            <div>
-              <b>Email Account Setup Required:</b> Connect your sending account in Settings to enable direct buyer outreach.
-            </div>
-          </div>
+        <div className="flex items-center gap-2">
           <button
-            onClick={() => navigate('/settings')}
-            className="px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs shrink-0"
+            type="button"
+            onClick={() => setIsTestMode(!isTestMode)}
+            className={`px-3.5 py-2 rounded-xl text-xs font-bold border transition-all ${
+              isTestMode 
+                ? 'bg-amber-500/20 text-amber-300 border-amber-500/40' 
+                : 'bg-[#050816] text-slate-300 border-[#1E293B] hover:text-white'
+            }`}
           >
-            Connect Account
+            {isTestMode ? '✓ Test Mode Active' : 'Switch to Test Recipient'}
           </button>
-        </div>
-      ) : (
-        <div className="p-4 rounded-xl border border-emerald-500/40 bg-emerald-950/40 text-emerald-200 flex items-center justify-between gap-4 text-xs font-medium">
-          <div className="flex items-center gap-3">
-            <Lock className="w-5 h-5 text-emerald-400 flex-shrink-0" />
-            <div>
-              <b>Email Account Connected:</b> Ready to send personalized outreach directly to verified buyer inboxes.
-            </div>
-          </div>
-          <StatusBadge status="valid" text="Connected" />
-        </div>
-      )}
-
-      {/* Pre-Campaign Summary Dashboard Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <div className="p-3.5 rounded-xl bg-[#0B1220] border border-[#1E293B]">
-          <div className="text-[11px] text-[#94A3B8] font-medium">Qualified Buyers</div>
-          <div className="text-xl font-bold text-purple-400 mt-0.5">{classData?.business_count || 0}</div>
-        </div>
-        <div className="p-3.5 rounded-xl bg-[#0B1220] border border-[#1E293B]">
-          <div className="text-[11px] text-[#94A3B8] font-medium">Valid Contacts</div>
-          <div className="text-xl font-bold text-emerald-400 mt-0.5">{classData?.business_count || 0}</div>
-        </div>
-        <div className="p-3.5 rounded-xl bg-[#0B1220] border border-[#1E293B]">
-          <div className="text-[11px] text-[#94A3B8] font-medium">Already Contacted</div>
-          <div className="text-xl font-bold text-amber-400 mt-0.5">0</div>
-        </div>
-        <div className="p-3.5 rounded-xl bg-[#0B1220] border border-[#1E293B]">
-          <div className="text-[11px] text-[#94A3B8] font-medium">Ready to Send</div>
-          <div className="text-xl font-bold text-[#F8FAFC] mt-0.5">{targetCount}</div>
         </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Campaign Editor Form */}
-        <div className="lg:col-span-7 bg-[#0B1220] border border-[#1E293B] rounded-xl p-6 shadow-sm space-y-4">
-          <h2 className="text-base font-bold text-white flex items-center gap-2">
-            <span>✉️ Compose Outreach Message</span>
-          </h2>
-
-          <div>
-            <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">
-              Recipients
-            </label>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-              {[
-                { id: 'business', label: '🏢 Business Buyers', count: `${classData?.business_count || 0} Leads` },
-                { id: 'individual', label: '👤 Individuals', count: `${classData?.individual_count || 0} Leads` },
-                { id: 'all', label: '🌐 All Qualified', count: `${(classData?.business_count || 0) + (classData?.individual_count || 0)} Leads` },
-                { id: 'custom', label: '🎯 Send Test Email', count: customRecipient.email.trim() ? '1 Custom' : 'Single' },
-              ].map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={() => setAudience(item.id)}
-                  className={`p-3 rounded-xl border text-left transition-all ${audience === item.id ? 'border-purple-500 bg-purple-500/15 text-white shadow-sm' : 'border-[#1E293B] bg-[#050816] text-slate-400 hover:border-slate-500'}`}
-                >
-                  <div className="text-xs font-bold truncate">{item.label}</div>
-                  <div className="text-[11px] text-slate-400 mt-0.5">{item.count}</div>
-                </button>
-              ))}
+        {/* Left Column: Configuration & Recipients */}
+        <div className="lg:col-span-7 space-y-6">
+          {/* Active Product & Target Summary Card */}
+          <div className="p-4 rounded-2xl bg-[#0B1220] border border-[#1E293B] space-y-3 shadow-xl">
+            <div className="flex items-center justify-between text-xs border-b border-[#1E293B] pb-2.5">
+              <span className="text-[#94A3B8] font-medium flex items-center gap-1.5">
+                <Package className="w-4 h-4 text-purple-400" />
+                <span>Campaign Product (Isolated):</span>
+              </span>
+              <span className="font-bold text-white bg-purple-950/40 px-2.5 py-0.5 rounded-full border border-purple-800/40">
+                {currentProductName}
+              </span>
             </div>
-          </div>
 
-          {/* Single Test Recipient Inputs */}
-          {audience === 'custom' && (
-            <div className="p-4 rounded-xl bg-[#050816] border border-purple-500/30 space-y-3">
-              <div className="flex items-center gap-2 text-xs font-bold text-purple-400">
-                <UserCheck className="w-4 h-4" />
-                <span>Test Email Details</span>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-[11px] font-semibold text-slate-300 mb-1">
-                    Email Address <span className="text-rose-400">*</span>
-                  </label>
-                  <input
-                    type="email"
-                    required
-                    value={customRecipient.email}
-                    onChange={(e) => setCustomRecipient({ ...customRecipient, email: e.target.value })}
-                    placeholder="e.g. partner@organization.com"
-                    className="w-full px-3 py-2 rounded-lg bg-[#0B1220] border border-[#1E293B] text-white text-xs focus:outline-none focus:border-purple-500 font-mono"
-                  />
+            {/* Recipient Selection Mode */}
+            {isTestMode ? (
+              <div className="space-y-3 pt-1">
+                <div className="flex items-center gap-2 text-amber-300 text-xs font-semibold">
+                  <AlertTriangle className="w-4 h-4" />
+                  <span>Single Test Recipient Mode (Won't affect production records)</span>
                 </div>
-                <div>
-                  <label className="block text-[11px] font-semibold text-slate-300 mb-1">
-                    Contact Person
-                  </label>
-                  <input
-                    type="text"
-                    value={customRecipient.name}
-                    onChange={(e) => setCustomRecipient({ ...customRecipient, name: e.target.value })}
-                    placeholder="e.g. Procurement Director"
-                    className="w-full px-3 py-2 rounded-lg bg-[#0B1220] border border-[#1E293B] text-white text-xs focus:outline-none focus:border-purple-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[11px] font-semibold text-slate-300 mb-1">
-                    Company Name
-                  </label>
-                  <input
-                    type="text"
-                    value={customRecipient.company}
-                    onChange={(e) => setCustomRecipient({ ...customRecipient, company: e.target.value })}
-                    placeholder="e.g. Sound Wellness LLC"
-                    className="w-full px-3 py-2 rounded-lg bg-[#0B1220] border border-[#1E293B] text-white text-xs focus:outline-none focus:border-purple-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[11px] font-semibold text-slate-300 mb-1">
-                    Country / Region
-                  </label>
-                  <input
-                    type="text"
-                    value={customRecipient.country}
-                    onChange={(e) => setCustomRecipient({ ...customRecipient, country: e.target.value })}
-                    placeholder="e.g. United States"
-                    className="w-full px-3 py-2 rounded-lg bg-[#0B1220] border border-[#1E293B] text-white text-xs focus:outline-none focus:border-purple-500"
-                  />
-                </div>
-              </div>
-            </div>
-          )}
-
-          <div>
-            <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">
-              Email Subject
-            </label>
-            <input
-              type="text"
-              value={subject}
-              onChange={(e) => setSubject(e.target.value)}
-              className="w-full px-3.5 py-2.5 rounded-xl bg-[#050816] border border-[#1E293B] text-white text-sm focus:outline-none focus:border-purple-500 font-medium"
-              placeholder="Enter subject..."
-            />
-          </div>
-
-          <div>
-            <div className="flex items-center justify-between mb-1.5">
-              <label className="text-xs font-semibold text-slate-300 uppercase tracking-wider">
-                Message Body
-              </label>
-              <div className="text-[10px] text-purple-400 font-mono flex items-center gap-1.5">
-                <span>&#123;&#123;contact_name&#125;&#125;</span>
-                <span>&#123;&#123;company_name&#125;&#125;</span>
-                <span>&#123;&#123;country&#125;&#125;</span>
-                <span>&#123;&#123;product&#125;&#125;</span>
-              </div>
-            </div>
-            <textarea
-              rows={6}
-              value={body}
-              onChange={(e) => setBody(e.target.value)}
-              className="w-full px-3.5 py-2.5 rounded-xl bg-[#050816] border border-[#1E293B] text-white text-sm focus:outline-none focus:border-purple-500 font-sans leading-relaxed"
-            />
-
-            {/* Template Variable Helper */}
-            {(subject.includes('{{product_name}}') || subject.includes('{{product}}') || body.includes('{{product_name}}') || body.includes('{{product}}')) && (
-              <div className="mt-2 p-3 rounded-xl bg-purple-500/10 border border-purple-500/20 text-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
-                <div className="flex items-center gap-2">
-                  <Package className="w-4 h-4 text-purple-400 flex-shrink-0" />
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
                   <div>
-                    <span className="text-slate-300">Using active product: </span>
-                    <b className="text-white">{currentProductName}</b>
+                    <label className="block text-slate-400 mb-1">Recipient Email *</label>
+                    <input
+                      type="email"
+                      value={customRecipient.email}
+                      onChange={(e) => setCustomRecipient({ ...customRecipient, email: e.target.value })}
+                      placeholder="e.g. your-test-email@gmail.com"
+                      className="w-full px-3 py-2 rounded-xl bg-[#050816] border border-[#1E293B] text-white focus:outline-none focus:border-purple-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-slate-400 mb-1">Company Name</label>
+                    <input
+                      type="text"
+                      value={customRecipient.company}
+                      onChange={(e) => setCustomRecipient({ ...customRecipient, company: e.target.value })}
+                      placeholder="e.g. Sample Wellness LLC"
+                      className="w-full px-3 py-2 rounded-xl bg-[#050816] border border-[#1E293B] text-white focus:outline-none focus:border-purple-500"
+                    />
                   </div>
                 </div>
-                <div className="flex items-center gap-1.5 text-[11px]">
-                  <span className="text-slate-400">Need to change the product used in this message?</span>
+              </div>
+            ) : (
+              <div className="space-y-3 pt-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+                    <Users className="w-4 h-4 text-emerald-400" />
+                    <span>Selected Outreach-Eligible Buyers ({selectedLeadIds.size} of {eligibleLeads.length})</span>
+                  </span>
                   <button
                     type="button"
-                    onClick={() => navigate('/settings?tab=catalog')}
-                    className="text-purple-400 hover:text-purple-300 font-bold underline inline-flex items-center gap-0.5 shrink-0"
+                    onClick={() => navigate('/discover')}
+                    className="text-[11px] text-purple-400 hover:text-purple-300 underline"
                   >
-                    <span>Manage Product Settings</span>
-                    <ArrowRight className="w-3 h-3" />
+                    Discover more buyers
                   </button>
                 </div>
+
+                {eligibleLeads.length === 0 ? (
+                  <div className="p-4 rounded-xl bg-[#050816] border border-[#1E293B] text-center space-y-2">
+                    <p className="text-xs text-slate-400">No outreach-eligible buyers for this product yet.</p>
+                    <button
+                      type="button"
+                      onClick={() => navigate('/discover')}
+                      className="px-3 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold transition-all"
+                    >
+                      Discover & Qualify Buyers
+                    </button>
+                  </div>
+                ) : (
+                  <div className="max-h-48 overflow-y-auto space-y-1.5 pr-1">
+                    {eligibleLeads.map((lead) => {
+                      const id = lead.lead_id || lead.id;
+                      const isSelected = selectedLeadIds.has(id);
+                      return (
+                        <div
+                          key={id}
+                          onClick={() => toggleSelectLead(id)}
+                          className={`p-2.5 rounded-xl border text-xs flex items-center justify-between cursor-pointer transition-all ${
+                            isSelected 
+                              ? 'bg-purple-950/20 border-purple-500/50 text-white' 
+                              : 'bg-[#050816] border-[#1E293B] text-slate-400 hover:border-slate-700'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={() => {}}
+                              className="rounded bg-[#050816] border-[#1E293B] text-purple-600 cursor-pointer"
+                            />
+                            <div>
+                              <div className="font-semibold text-slate-200">{lead.company_name || lead.company}</div>
+                              <div className="text-[10px] text-slate-400">{lead.email} • {lead.country}</div>
+                            </div>
+                          </div>
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                            Eligible
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             )}
           </div>
 
-          <div className="p-3 rounded-xl bg-[#050816] border border-[#1E293B] flex items-center justify-between">
-            <label className="flex items-center gap-2.5 cursor-pointer text-xs font-semibold text-slate-300">
+          {/* Template Editor */}
+          <div className="bg-[#0B1220] border border-[#1E293B] rounded-2xl p-5 shadow-xl space-y-4">
+            <h2 className="text-xs font-bold text-white uppercase tracking-wider">Email Copy & Placeholders</h2>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-300 mb-1">Subject Line</label>
+              <input
+                type="text"
+                value={subject}
+                onChange={(e) => setSubject(e.target.value)}
+                className="w-full px-3.5 py-2.5 rounded-xl bg-[#050816] border border-[#1E293B] text-white text-xs focus:outline-none focus:border-purple-500 font-sans"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-300 mb-1">Body Template</label>
+              <textarea
+                rows={9}
+                value={body}
+                onChange={(e) => setBody(e.target.value)}
+                className="w-full p-3.5 rounded-xl bg-[#050816] border border-[#1E293B] text-white text-xs focus:outline-none focus:border-purple-500 font-sans leading-relaxed resize-y"
+              />
+              <div className="flex flex-wrap gap-1.5 mt-2 text-[10px] text-slate-400">
+                <span>Available tags:</span>
+                <code className="bg-[#050816] px-1.5 py-0.5 rounded text-purple-300 border border-[#1E293B]">{'{{product_name}}'}</code>
+                <code className="bg-[#050816] px-1.5 py-0.5 rounded text-purple-300 border border-[#1E293B]">{'{{company_name}}'}</code>
+                <code className="bg-[#050816] px-1.5 py-0.5 rounded text-purple-300 border border-[#1E293B]">{'{{contact_name}}'}</code>
+                <code className="bg-[#050816] px-1.5 py-0.5 rounded text-purple-300 border border-[#1E293B]">{'{{country}}'}</code>
+                <code className="bg-[#050816] px-1.5 py-0.5 rounded text-purple-300 border border-[#1E293B]">{'{{buyer_type}}'}</code>
+              </div>
+            </div>
+
+            {/* Presentation Attachment Toggle */}
+            <div className="p-3.5 rounded-xl bg-[#050816] border border-[#1E293B] flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <Paperclip className="w-4 h-4 text-purple-400" />
+                <div className="text-xs">
+                  <div className="font-bold text-white">Attach Product Presentation Catalog (PDF)</div>
+                  <div className="text-[11px] text-slate-400">assets/company_presentation.pdf (Wholesale catalog)</div>
+                </div>
+              </div>
               <input
                 type="checkbox"
                 checked={attachPdf}
                 onChange={(e) => setAttachPdf(e.target.checked)}
-                className="w-4 h-4 rounded text-purple-600 bg-slate-900 border-slate-700"
+                className="w-4 h-4 rounded bg-[#050816] border-[#1E293B] text-purple-600 cursor-pointer"
               />
-              <span className="flex items-center gap-1.5">
-                <Paperclip className="w-3.5 h-3.5 text-purple-400" />
-                <span>Attach Product Presentation Catalog (PDF)</span>
-              </span>
-            </label>
-            <div className="flex items-center gap-2">
-              <a
-                href={apiService.getCatalogUrl()}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-[11px] text-purple-400 hover:text-purple-300 font-semibold underline flex items-center gap-1"
-              >
-                <span>View Catalog</span>
-              </a>
-              <span className="text-[10px] text-emerald-400 font-bold flex items-center gap-1 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
-                <FileCheck className="w-3.5 h-3.5" />
-                <span>Brochure Ready</span>
-              </span>
             </div>
+
+            {/* Launch Review Button */}
+            <button
+              type="button"
+              onClick={handleOpenReview}
+              disabled={sending || (!isTestMode && selectedLeadIds.size === 0)}
+              className="w-full py-3 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold shadow-lg shadow-purple-600/20 transition-all flex items-center justify-center gap-2 disabled:opacity-50 active:scale-95"
+            >
+              <Eye className="w-4 h-4" />
+              <span>Review Campaign & Recipients ({isTestMode ? '1 Test' : selectedLeadIds.size})</span>
+              <ArrowRight className="w-4 h-4" />
+            </button>
           </div>
-
-          {/* Sending Progress Indicator */}
-          {sending && (
-            <div className="p-4 rounded-xl bg-[#050816] border border-purple-500/30 space-y-2">
-              <div className="flex justify-between items-center text-xs font-semibold text-slate-200">
-                <span className="flex items-center gap-2">
-                  <Clock className="w-4 h-4 text-purple-400 animate-spin" />
-                  <span>Connecting and dispatching outreach...</span>
-                </span>
-                <span className="text-purple-400 font-mono">In Progress</span>
-              </div>
-              <div className="w-full bg-slate-800 rounded-full h-2 overflow-hidden">
-                <div className="bg-gradient-to-r from-purple-500 to-indigo-500 h-2 rounded-full animate-pulse w-3/4"></div>
-              </div>
-            </div>
-          )}
-
-          <button
-            onClick={handleOpenDispatchModal}
-            disabled={sending || targetCount === 0 || !gmailConfigured}
-            className="w-full py-3 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-sm font-bold shadow-lg shadow-purple-500/20 transition-all disabled:opacity-40 flex items-center justify-center gap-2 active:scale-98"
-          >
-            <Send className="w-4 h-4" />
-            <span>
-              {sending 
-                ? 'Dispatching outreach...' 
-                : audience === 'custom' 
-                  ? 'Send Test Email' 
-                  : `Launch Outreach — ${targetCount} Recipient${targetCount === 1 ? '' : 's'}`}
-            </span>
-          </button>
         </div>
 
-        {/* Live Personalization Preview Card */}
-        <div className="lg:col-span-5 bg-[#0B1220] border border-[#1E293B] rounded-2xl p-6 shadow-xl flex flex-col justify-between">
-          <div>
-            <div className="flex items-center justify-between mb-3">
+        {/* Right Column: Dynamic Live Preview & Dispatch Results */}
+        <div className="lg:col-span-5 space-y-6">
+          {/* Live Preview Card */}
+          <div className="bg-[#0B1220] border border-[#1E293B] rounded-2xl p-5 shadow-xl space-y-4">
+            <div className="flex items-center justify-between border-b border-[#1E293B] pb-3">
               <div className="flex items-center gap-2">
-                <Eye className="w-4 h-4 text-purple-400" />
-                <h3 className="text-xs font-bold text-white uppercase tracking-wider">Personalization Preview</h3>
+                <Eye className="w-4 h-4 text-cyan-400" />
+                <h2 className="text-xs font-bold text-white uppercase tracking-wider">Live Personalization Preview</h2>
               </div>
-              <span className="text-[11px] text-slate-400">{previewLead.name} ({previewLead.country})</span>
+              <span className="text-[10px] text-slate-400 font-mono">Sample: {previewLead.company_name || previewLead.company}</span>
             </div>
 
-            <div className="p-4 rounded-xl bg-[#050816] border border-[#1E293B] space-y-3 font-sans text-xs">
-              <div className="border-b border-[#1E293B] pb-2.5">
-                <div className="text-slate-400"><b>To:</b> <span className="font-mono text-slate-200">{previewLead.email}</span></div>
-                <div className="text-purple-300 font-semibold mt-1"><b>Subject:</b> {previewSubject}</div>
+            <div className="p-4 rounded-xl bg-[#050816] border border-[#1E293B] space-y-3 text-xs">
+              <div className="border-b border-[#1E293B] pb-2 space-y-1">
+                <div className="text-slate-400 text-[11px]">To: <code className="text-emerald-400 font-mono">{previewLead.email}</code></div>
+                <div className="text-white font-bold">{previewSubject}</div>
               </div>
-              <div className="whitespace-pre-wrap text-slate-200 leading-relaxed max-h-56 overflow-y-auto">
+
+              <div className="text-slate-200 whitespace-pre-line leading-relaxed text-[11px] font-sans">
                 {previewBody}
               </div>
+
               {attachPdf && (
-                <div className="border-t border-[#1E293B] pt-2 flex items-center gap-2 text-slate-400 text-[11px]">
-                  <Paperclip className="w-3.5 h-3.5 text-purple-400" />
-                  <span>Product_Export_Catalog.pdf</span>
+                <div className="pt-2 border-t border-[#1E293B] flex items-center gap-2 text-[10px] text-purple-300">
+                  <Paperclip className="w-3 h-3" />
+                  <span>Attached: Himalayan_Singing_Bowls_Export_Catalog.pdf</span>
                 </div>
               )}
             </div>
           </div>
 
-          <div className="mt-4 p-3 rounded-xl bg-[#050816]/70 border border-[#1E293B] text-[11px] text-slate-400 space-y-1">
-            <p className="font-semibold text-slate-300">Commercial Outreach Standard:</p>
-            <p>Emails are dispatched directly to verified business contacts. Dynamic fields ensure personal relevance for each buyer.</p>
-          </div>
+          {/* Results Summary if Dispatched */}
+          {results && (
+            <div className="bg-[#0B1220] border border-emerald-500/30 rounded-2xl p-5 shadow-xl space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 text-emerald-400 font-bold text-xs">
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>Outreach Dispatch Summary</span>
+                </div>
+                <span className="text-xs text-white">
+                  <b>{results.dispatched || 0}</b> Sent • <b>{results.failed || 0}</b> Failed
+                </span>
+              </div>
+
+              <div className="max-h-56 overflow-y-auto space-y-1.5 pr-1">
+                {(results.results || []).map((r, i) => (
+                  <div
+                    key={i}
+                    className={`p-2.5 rounded-xl border text-[11px] flex items-center justify-between ${
+                      r.status === 'sent' 
+                        ? 'bg-emerald-950/20 border-emerald-900/50 text-emerald-200' 
+                        : 'bg-rose-950/20 border-rose-900/50 text-rose-200'
+                    }`}
+                  >
+                    <div>
+                      <div className="font-semibold">{r.company_name || r.recipient}</div>
+                      <div className="text-[10px] opacity-75 font-mono">{r.recipient}</div>
+                    </div>
+                    <span className={`px-2 py-0.5 rounded font-bold text-[9px] ${
+                      r.status === 'sent' ? 'bg-emerald-500/20 text-emerald-300' : 'bg-rose-500/20 text-rose-300'
+                    }`}>
+                      {r.status === 'sent' ? '✓ SENT' : '✕ FAILED'}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
-      {/* Confirmation Modal */}
-      {showConfirmModal && (
-        <div className="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-[#0B1220] border border-[#1E293B] rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4 animate-in fade-in zoom-in-95 duration-150">
+      {/* Campaign Review & Explicit Confirmation Modal */}
+      {showReviewModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+          <div className="w-full max-w-lg rounded-2xl bg-[#0B1220] border border-purple-500/40 p-6 shadow-2xl space-y-5">
             <div className="flex items-center justify-between border-b border-[#1E293B] pb-3">
-              <div className="flex items-center gap-2 text-white font-bold text-base">
-                <Lock className="w-5 h-5 text-emerald-400" />
-                <span>Review & Launch Outreach</span>
+              <div className="flex items-center gap-2.5">
+                <ShieldCheck className="w-5 h-5 text-emerald-400" />
+                <h3 className="text-sm font-bold text-white">Review Campaign Before Dispatch</h3>
               </div>
-              <button 
-                onClick={() => setShowConfirmModal(false)}
+              <button
+                type="button"
+                onClick={() => setShowReviewModal(false)}
                 className="text-slate-400 hover:text-white"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="space-y-3 text-xs text-slate-300">
-              <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl text-amber-300">
-                ⚠️ <b>Notice:</b> Emails will be sent to selected external buyers.
-              </div>
-
-              <div className="bg-[#050816] p-3.5 rounded-xl border border-[#1E293B] space-y-2">
+            <div className="space-y-3 text-xs">
+              <div className="p-3 rounded-xl bg-[#050816] border border-[#1E293B] space-y-2">
                 <div className="flex justify-between">
-                  <span className="text-slate-400">Recipients:</span>
-                  <b className="text-white font-mono">{audience === 'custom' ? '1 (Test Recipient)' : `${targetCount} Buyers`}</b>
+                  <span className="text-slate-400">Target Product:</span>
+                  <span className="font-bold text-white">{currentProductName}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-slate-400">Verified contacts:</span>
-                  <b className="text-emerald-400 font-mono">{audience === 'custom' ? customRecipient.email : `${targetCount} Verified`}</b>
+                  <span className="text-slate-400">Total Recipients:</span>
+                  <span className="font-bold text-emerald-400">
+                    {isTestMode ? '1 Single Test Recipient' : `${selectedLeadIds.size} Outreach-Eligible Buyers`}
+                  </span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-400">Attachment:</span>
-                  <b className={attachPdf ? 'text-purple-400' : 'text-slate-400'}>
-                    {attachPdf ? 'Product Presentation Catalog' : 'None'}
-                  </b>
+                  <span className="text-slate-200">{attachPdf ? 'Product Catalog PDF' : 'None'}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-slate-400">Delivery Channel:</span>
-                  <b className="text-white">Direct Email Outreach</b>
+                  <span className="text-slate-400">Delivery Transport:</span>
+                  <span className="text-purple-300 font-mono">Gmail SMTP (STARTTLS)</span>
                 </div>
               </div>
-            </div>
 
-            <div className="flex items-center gap-3 pt-2">
-              <button
-                type="button"
-                onClick={() => setShowConfirmModal(false)}
-                className="flex-1 py-2.5 rounded-xl bg-[#050816] border border-[#1E293B] text-slate-300 text-xs font-bold hover:bg-slate-800 transition-all"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleConfirmAndSend}
-                className="flex-1 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold shadow-lg shadow-purple-500/25 transition-all"
-              >
-                Launch Outreach
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Results Section */}
-      {results && (
-        <div className="bg-[#0B1220] border border-[#1E293B] rounded-xl p-6 shadow-sm space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-base font-bold text-white">📬 Outreach Results Summary</h2>
-            <button
-              onClick={() => navigate('/reports')}
-              className="flex items-center gap-1.5 text-xs font-semibold text-purple-400 hover:text-purple-300"
-            >
-              <span>View Full Analytics</span>
-              <ArrowRight className="w-4 h-4" />
-            </button>
-          </div>
-
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <div className="p-3.5 rounded-xl bg-[#050816] border border-[#1E293B]">
-              <div className="text-xs text-slate-400">Targeted</div>
-              <div className="text-xl font-bold text-white">{results.total_targeted}</div>
-            </div>
-            <div className="p-3.5 rounded-xl bg-[#050816] border border-[#1E293B]">
-              <div className="text-xs text-slate-400">Successfully Dispatched</div>
-              <div className="text-xl font-bold text-emerald-400">{results.sent_count}</div>
-            </div>
-            <div className="p-3.5 rounded-xl bg-[#050816] border border-[#1E293B]">
-              <div className="text-xs text-slate-400">Previously Contacted / Skipped</div>
-              <div className="text-xl font-bold text-amber-400">{results.skipped_duplicates}</div>
-            </div>
-            <div className="p-3.5 rounded-xl bg-[#050816] border border-[#1E293B]">
-              <div className="text-xs text-slate-400">Undeliverable</div>
-              <div className="text-xl font-bold text-rose-400">{results.failed_count}</div>
-            </div>
-          </div>
-
-          {results.previews?.length > 0 && (
-            <div className="space-y-3 pt-2">
-              <h3 className="text-xs font-bold text-white uppercase tracking-wider">Dispatched Messages</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-80 overflow-y-auto pr-1">
-                {results.previews.map((item, idx) => (
-                  <div key={idx} className="p-3.5 rounded-xl bg-[#050816] border border-[#1E293B] text-xs space-y-1.5">
-                    <div className="flex justify-between items-center">
-                      <span className="font-bold text-white">{item.buyer_name} ({item.company})</span>
-                      <StatusBadge status="valid" text="Delivered" />
-                    </div>
-                    <div className="text-purple-300 font-mono text-[11px]">{item.email}</div>
-                    <div className="text-slate-300 font-medium">Subject: {item.subject}</div>
-                    <div className="text-slate-400 text-[11px] truncate">{item.body.substring(0, 100)}...</div>
+              {!isTestMode && targetedLeads.length > 0 && (
+                <div>
+                  <div className="text-[11px] font-semibold text-slate-400 mb-1.5">Recipients to be contacted:</div>
+                  <div className="max-h-32 overflow-y-auto space-y-1 p-2 rounded-xl bg-[#050816] border border-[#1E293B] text-[11px]">
+                    {targetedLeads.map(l => (
+                      <div key={l.lead_id || l.id} className="flex items-center justify-between text-slate-300 py-0.5">
+                        <span className="font-medium">{l.company_name || l.company}</span>
+                        <code className="text-emerald-400 font-mono text-[10px]">{l.email}</code>
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
+                </div>
+              )}
             </div>
-          )}
+
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowReviewModal(false)}
+                className="px-4 py-2 rounded-xl bg-[#050816] text-slate-300 hover:text-white border border-[#1E293B] text-xs font-semibold"
+              >
+                Back to Edit
+              </button>
+              <button
+                type="button"
+                onClick={handleExecuteSend}
+                disabled={sending}
+                className="px-6 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold shadow-lg shadow-purple-600/30 transition-all flex items-center gap-2 active:scale-95"
+              >
+                <Send className="w-4 h-4" />
+                <span>{sending ? 'Sending Emails...' : 'Confirm & Launch Outreach'}</span>
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

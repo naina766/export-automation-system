@@ -12,7 +12,7 @@ Discover potential international buyers, qualify them with AI, personalize outre
 [![Google Gemini](https://img.shields.io/badge/Google_Gemini-2.5_Flash-8E75C2?style=flat-square&logo=google&logoColor=white)](https://ai.google.dev/)
 [![Serper](https://img.shields.io/badge/Serper-Search_API-4285F4?style=flat-square&logo=google&logoColor=white)](https://serper.dev/)
 [![Gmail](https://img.shields.io/badge/Gmail-SMTP_Outreach-EA4335?style=flat-square&logo=gmail&logoColor=white)](https://workspace.google.com/)
-[![Pytest](https://img.shields.io/badge/Pytest-41_Passed-0A9EDC?style=flat-square&logo=pytest&logoColor=white)](https://docs.pytest.org/)
+[![Pytest](https://img.shields.io/badge/Pytest-59_Passed-0A9EDC?style=flat-square&logo=pytest&logoColor=white)](https://docs.pytest.org/)
 
 **GitHub Repository:** [https://github.com/naina766/export-automation-system](https://github.com/naina766/export-automation-system)  
 **Live Demo:** Coming Soon

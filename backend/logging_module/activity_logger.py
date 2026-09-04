@@ -35,6 +35,11 @@ class ActivityLogger:
                 writer.writerow(SENT_LOG_COLUMNS)
 
     @classmethod
+    def log_activity(cls, *args, **kwargs):
+        """Compatibility alias for log_send_event."""
+        return cls.log_send_event(*args, **kwargs)
+
+    @classmethod
     def log_send_event(
         cls,
         buyer_name: str,

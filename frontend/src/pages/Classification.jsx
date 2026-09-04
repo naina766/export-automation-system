@@ -228,7 +228,7 @@ export const Classification = () => {
                           <span>{lead.company || lead.company_name || 'Prospective Buyer'}</span>
                         </div>
                         <div className="text-[10px] text-[#94A3B8] font-normal mt-0.5">
-                          {lead.contact_name || lead.name || 'Procurement Lead'}
+                          {lead.contact_name || lead.name || 'Company Team'}
                         </div>
                       </td>
                       <td className="p-3 text-slate-300">

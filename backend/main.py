@@ -2,9 +2,10 @@
 EXPORT Automation System — FastAPI REST Backend
 Live B2B lead discovery, contact validation, Gemini AI qualification, and personalized Gmail SMTP outreach.
 """
+import os
 import sys
 from pathlib import Path
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Union
 import pandas as pd
 from fastapi import FastAPI, UploadFile, File, Form, Response, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -30,7 +31,8 @@ from config import (
 from search.web_search_provider import (
     WebBuyerSearchProvider,
     SearchProviderNotConfiguredError,
-    SearchProviderAPIError
+    SearchProviderAPIError,
+    UnsupportedSearchProviderError
 )
 from search.parser import extract_contact_from_public_website
 import httpx
@@ -39,43 +41,52 @@ from extraction.data_extractor import DataExtractor
 from validation.email_validator import EmailValidator, validate_email_address
 from classification.gemini_classifier import LeadClassifier
 from outreach.attachment_handler import AttachmentHandler
-from outreach.gmail_sender import EmailSender, DEFAULT_SUBJECT, DEFAULT_BODY
+from outreach.gmail_sender import (
+    EmailSender,
+    is_outreach_eligible,
+    DEFAULT_SUBJECT,
+    DEFAULT_BODY
+)
 from logging_module.activity_logger import ActivityLogger
 from reports.report_generator import ReportGenerator
+from products.catalog import ProductCatalog
 
 # Initialize FastAPI app
 app = FastAPI(
     title="EXPORT Automation System API",
-    description="Live B2B Export Automation Platform for Himalayan Singing Bowls",
+    description="Live B2B Export Automation Platform for Handcrafted Singing Bowls & Acoustic Instruments",
     version="2.0.0"
 )
 
-# Enable CORS for React Frontend
+# Enable CORS for React Frontend (configurable via FRONTEND_URL env var)
+frontend_env_url = os.getenv("FRONTEND_URL", "").strip()
+allowed_origins = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:3000",
+    "http://127.0.0.1:3000"
+]
+if frontend_env_url and frontend_env_url not in allowed_origins:
+    allowed_origins.append(frontend_env_url)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-        "http://localhost:3000",
-        "http://127.0.0.1:3000"
-    ],
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-from products.catalog import ProductCatalog
-
 ActivityLogger.ensure_log_file()
 
-# Pydantic Models
+# Pydantic Request Models
 class ProductCreateRequest(BaseModel):
     id: Optional[str] = None
     name: str
     description: Optional[str] = ""
-    keywords: Optional[Any] = None # List[str] or str
-    buyer_types: Optional[Any] = None # List[str] or str
-    target_countries: Optional[Any] = None # List[str] or str
+    keywords: Optional[Any] = None
+    buyer_types: Optional[Any] = None
+    target_countries: Optional[Any] = None
     email_subject_template: Optional[str] = None
     email_body_template: Optional[str] = None
     catalog_path: Optional[str] = "assets/company_presentation.pdf"
@@ -97,14 +108,18 @@ class SearchRequest(BaseModel):
     product: Optional[str] = Field(default=None)
     country: Optional[str] = Field(default=None)
     buyer_type: Optional[str] = Field(default=None)
-    keywords: Optional[Any] = Field(default=None) # str or List[str]
+    keywords: Optional[Any] = Field(default=None)
     limit: Optional[int] = Field(default=25)
     auto_ingest: Optional[bool] = Field(default=True)
 
+class EmailValidateRequest(BaseModel):
+    email: Optional[str] = None
+
 class SendCampaignRequest(BaseModel):
     product_id: Optional[str] = Field(default=None)
+    lead_ids: Optional[List[str]] = Field(default=None)
     campaign_id: Optional[str] = Field(default=None)
-    audience: str = Field(default="business") # business | individual | all | custom
+    audience: str = Field(default="business")
     subject: Optional[str] = Field(default=None)
     body_template: Optional[str] = Field(default=None)
     attach_presentation: bool = Field(default=True)
@@ -143,11 +158,16 @@ class UpdateLeadRequest(BaseModel):
     original_company: Optional[str] = None
     original_email: Optional[str] = None
     company_name: str
-    buyer_name: str
+    buyer_name: Optional[str] = None
+    contact_name: Optional[str] = None
     email: str
     website: Optional[str] = None
     country: Optional[str] = None
     buyer_type: Optional[str] = None
+
+class ClassifyRequest(BaseModel):
+    product_id: Optional[str] = None
+    product_name: Optional[str] = None
 
 
 # ==========================================
@@ -159,9 +179,16 @@ async def health_check():
     gemini_key, _ = get_gemini_config()
     gmail_user, gmail_pass = get_gmail_credentials()
 
+    search_status = "READY" if search_cfg.get("api_key") else "NOT_CONFIGURED"
+    gemini_status = "READY" if gemini_key else "NOT_CONFIGURED"
+    gmail_status = "READY" if (gmail_user and gmail_pass) else "NOT_CONFIGURED"
+
     return {
         "status": "healthy",
         "service": "EXPORT Automation System",
+        "search_status": search_status,
+        "gemini_status": gemini_status,
+        "gmail_status": gmail_status,
         "search_configured": bool(search_cfg.get("api_key")),
         "gemini_configured": bool(gemini_key),
         "gmail_configured": bool(gmail_user and gmail_pass)
@@ -258,10 +285,13 @@ async def get_dashboard_data(product_id: Optional[str] = None):
         "products": ProductCatalog.list_products(),
         "system": {
             "search_keyword": active_prod.get("name") if active_prod else settings.get("SEARCH_KEYWORD", "Himalayan Sound Healing Bowls"),
-            "search_provider": search_cfg.get("provider", "google_cse"),
+            "search_provider": search_cfg.get("provider", "serper"),
+            "search_status": "READY" if search_cfg.get("api_key") else "NOT_CONFIGURED",
             "search_configured": bool(search_cfg.get("api_key")),
+            "gemini_status": "READY" if gemini_key else "NOT_CONFIGURED",
             "gemini_configured": bool(gemini_key),
             "gemini_model": gemini_model,
+            "gmail_status": "READY" if (gmail_user and gmail_pass) else "NOT_CONFIGURED",
             "gmail_configured": bool(gmail_user and gmail_pass),
             "email_mode": "SMTP"
         }
@@ -280,7 +310,22 @@ async def get_all_leads(product_id: Optional[str] = None):
         df = pd.read_csv(BUYERS_CSV, dtype=str).fillna("")
         if product_id and "product_id" in df.columns:
             df = df[df["product_id"] == product_id]
+        
+        contacted_set = EmailValidator.get_contacted_emails()
         records = df.to_dict(orient="records")
+
+        # Ensure authoritative outreach_status and clean contact_name on each lead
+        for r in records:
+            if "contact_name" not in r or str(r.get("contact_name", "")).strip() in ["", "None", "null", "undefined", "Procurement Lead", "Purchasing Manager"]:
+                r["contact_name"] = None
+
+            eligible, _ = is_outreach_eligible(
+                lead=r,
+                campaign_product_id=product_id or r.get("product_id"),
+                contacted_emails=contacted_set
+            )
+            r["outreach_status"] = "eligible" if eligible else "not_eligible"
+
         return {"total": len(records), "leads": records}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to read buyers: {str(e)}")
@@ -289,15 +334,20 @@ async def get_all_leads(product_id: Optional[str] = None):
 async def get_sample_workflow_buyers(product_id: Optional[str] = None):
     """
     Returns explicitly labeled demonstration buyers for the sample workflow.
-    Every record is marked with is_demo=True and cannot enter production outreach.
+    Every record is marked with is_demo=True and CANNOT enter production outreach.
     """
     prod = ProductCatalog.get_product(product_id) if product_id else ProductCatalog.get_active_product()
     prod_name = prod.get("name", "Himalayan Sound Healing Bowls") if prod else "Himalayan Sound Healing Bowls"
+    p_id = prod.get("id") if prod else "himalayan-sound-healing-bowls"
     
     sample_records = [
         {
-            "buyer_name": "Marcus Vance",
+            "lead_id": "demo-vance-sound",
+            "id": "demo-vance-sound",
             "company_name": "Vance Sound Sanctuary LLC",
+            "company": "Vance Sound Sanctuary LLC",
+            "contact_name": None,
+            "buyer_name": None,
             "email": "partnerships@soundsanctuary-demo.com",
             "country": "United States",
             "buyer_type": "Wellness Studio & Distributor",
@@ -305,13 +355,24 @@ async def get_sample_workflow_buyers(product_id: Optional[str] = None):
             "phone": "+1 415-555-0192",
             "source": "Sample Workflow Directory",
             "email_status": "valid",
-            "is_duplicate": "False",
-            "product_id": prod.get("id") if prod else "himalayan-sound-healing-bowls",
+            "syntax_valid": True,
+            "qualification_status": "qualified",
+            "ai_score": 92,
+            "ai_confidence": 0.95,
+            "ai_reason": "Established wellness studio with multi-location sound bath facilities and retail shop.",
+            "priority": "high",
+            "outreach_status": "not_eligible",
+            "is_duplicate": False,
+            "product_id": p_id,
             "is_demo": True
         },
         {
-            "buyer_name": "Elena Rostova",
+            "lead_id": "demo-nordic-mind",
+            "id": "demo-nordic-mind",
             "company_name": "Nordic Mind & Body GmbH",
+            "company": "Nordic Mind & Body GmbH",
+            "contact_name": None,
+            "buyer_name": None,
             "email": "procurement@nordicmindbody-demo.de",
             "country": "Germany",
             "buyer_type": "Wholesale Importer",
@@ -319,13 +380,24 @@ async def get_sample_workflow_buyers(product_id: Optional[str] = None):
             "phone": "+49 30 1234567",
             "source": "Sample Workflow Directory",
             "email_status": "valid",
-            "is_duplicate": "False",
-            "product_id": prod.get("id") if prod else "himalayan-sound-healing-bowls",
+            "syntax_valid": True,
+            "qualification_status": "qualified",
+            "ai_score": 88,
+            "ai_confidence": 0.91,
+            "ai_reason": "Major European importer and B2B distributor of meditation accessories.",
+            "priority": "high",
+            "outreach_status": "not_eligible",
+            "is_duplicate": False,
+            "product_id": p_id,
             "is_demo": True
         },
         {
-            "buyer_name": "Alistair Campbell",
+            "lead_id": "demo-highland-holistic",
+            "id": "demo-highland-holistic",
             "company_name": "Highland Holistic Healing Ltd",
+            "company": "Highland Holistic Healing Ltd",
+            "contact_name": None,
+            "buyer_name": None,
             "email": "contact@highlandholistic-demo.co.uk",
             "country": "United Kingdom",
             "buyer_type": "Specialty Retailer & Distributor",
@@ -333,36 +405,40 @@ async def get_sample_workflow_buyers(product_id: Optional[str] = None):
             "phone": "+44 131 555 0148",
             "source": "Sample Workflow Directory",
             "email_status": "valid",
-            "is_duplicate": "False",
-            "product_id": prod.get("id") if prod else "himalayan-sound-healing-bowls",
+            "syntax_valid": True,
+            "qualification_status": "qualified",
+            "ai_score": 84,
+            "ai_confidence": 0.89,
+            "ai_reason": "Specialty holistic retailer with wholesale distribution network across UK.",
+            "priority": "medium",
+            "outreach_status": "not_eligible",
+            "is_duplicate": False,
+            "product_id": p_id,
             "is_demo": True
         },
         {
-            "buyer_name": "Claire Dubois",
+            "lead_id": "demo-zenith-therapy",
+            "id": "demo-zenith-therapy",
             "company_name": "Zenith Sound Therapy SARL",
-            "email": "import@zeniththerapy-demo.fr",
+            "company": "Zenith Sound Therapy SARL",
+            "contact_name": None,
+            "buyer_name": None,
+            "email": None,
             "country": "France",
             "buyer_type": "Sound Bath Studio",
             "website": "https://zeniththerapy-demo.fr",
             "phone": "+33 1 42 68 00 00",
             "source": "Sample Workflow Directory",
-            "email_status": "valid",
-            "is_duplicate": "False",
-            "product_id": prod.get("id") if prod else "himalayan-sound-healing-bowls",
-            "is_demo": True
-        },
-        {
-            "buyer_name": "David Tanaka",
-            "company_name": "Tanaka Lifestyle Imports Co.",
-            "email": "inquiry@tanakalifestyle-demo.jp",
-            "country": "Japan",
-            "buyer_type": "Wholesale Importer",
-            "website": "https://tanakalifestyle-demo.jp",
-            "phone": "+81 3 5555 0188",
-            "source": "Sample Workflow Directory",
-            "email_status": "valid",
-            "is_duplicate": "False",
-            "product_id": prod.get("id") if prod else "himalayan-sound-healing-bowls",
+            "email_status": "missing",
+            "syntax_valid": False,
+            "qualification_status": "needs_review",
+            "ai_score": 60,
+            "ai_confidence": 0.70,
+            "ai_reason": "Sound therapy center but no email address discovered.",
+            "priority": "low",
+            "outreach_status": "not_eligible",
+            "is_duplicate": False,
+            "product_id": p_id,
             "is_demo": True
         }
     ]
@@ -378,10 +454,7 @@ async def get_sample_workflow_buyers(product_id: Optional[str] = None):
 
 @app.post("/api/leads/enrich")
 async def retry_lead_enrichment(payload: EnrichLeadRequest):
-    """
-    Re-attempts email extraction from a buyer's company website or domain.
-    Never fabricates emails; returns not found if unavailable.
-    """
+    """Re-attempts email extraction from a buyer's company website with SSRF protection."""
     target_website = (payload.website or "").strip()
     if not target_website and payload.company:
         clean_comp = re.sub(r"[^\w\s]", "", payload.company).strip().replace(" ", "").lower()
@@ -398,7 +471,7 @@ async def retry_lead_enrichment(payload: EnrichLeadRequest):
 
     if found_email:
         val_res = validate_email_address(found_email)
-        if val_res.get("valid") is True:
+        if val_res.get("syntax_valid") is True:
             try:
                 if BUYERS_CSV.exists():
                     df = pd.read_csv(BUYERS_CSV, dtype=str).fillna("")
@@ -408,6 +481,7 @@ async def retry_lead_enrichment(payload: EnrichLeadRequest):
                            (payload.website and row.get("website", "").strip().lower() == payload.website.strip().lower()):
                             df.at[idx, "email"] = found_email
                             df.at[idx, "email_status"] = "valid"
+                            df.at[idx, "syntax_valid"] = "True"
                             df.at[idx, "valid"] = "True"
                             matched = True
                             break
@@ -420,24 +494,22 @@ async def retry_lead_enrichment(payload: EnrichLeadRequest):
                 "success": True,
                 "email": found_email,
                 "status": "valid",
-                "message": "Email found"
+                "message": "Email found on public website"
             }
 
     return {
         "success": False,
-        "message": "Email could not be found. You can add it manually."
+        "message": "Email could not be found on public website. You can enter it manually."
     }
 
 @app.post("/api/leads/update")
 async def update_lead_endpoint(payload: UpdateLeadRequest):
-    """
-    Manually updates a buyer's contact details and re-validates email format.
-    """
+    """Manually updates a buyer's contact details and re-validates email format."""
     val_res = validate_email_address(payload.email.strip())
-    if not val_res.get("valid"):
+    if not val_res.get("syntax_valid"):
         raise HTTPException(
             status_code=422,
-            detail="Please enter a valid email address."
+            detail="Please enter a valid email address with correct syntax."
         )
 
     try:
@@ -448,6 +520,9 @@ async def update_lead_endpoint(payload: UpdateLeadRequest):
         matched = False
         target_idx = None
 
+        contact_val = (payload.contact_name or payload.buyer_name or "").strip()
+        clean_contact = contact_val if contact_val not in ["", "None", "null", "undefined", "Procurement Lead"] else None
+
         for idx, row in df.iterrows():
             if (payload.original_company and row.get("company_name", "").strip().lower() == payload.original_company.strip().lower()) or \
                (payload.original_email and row.get("email", "").strip().lower() == payload.original_email.strip().lower()) or \
@@ -457,7 +532,8 @@ async def update_lead_endpoint(payload: UpdateLeadRequest):
                 break
 
         if matched and target_idx is not None:
-            df.at[target_idx, "buyer_name"] = payload.buyer_name.strip()
+            df.at[target_idx, "contact_name"] = clean_contact or ""
+            df.at[target_idx, "buyer_name"] = clean_contact or ""
             df.at[target_idx, "company_name"] = payload.company_name.strip()
             df.at[target_idx, "email"] = payload.email.strip()
             if payload.website:
@@ -467,25 +543,34 @@ async def update_lead_endpoint(payload: UpdateLeadRequest):
             if payload.buyer_type:
                 df.at[target_idx, "buyer_type"] = payload.buyer_type.strip()
             df.at[target_idx, "email_status"] = "valid"
+            df.at[target_idx, "syntax_valid"] = "True"
             df.at[target_idx, "valid"] = "True"
             df.to_csv(BUYERS_CSV, index=False)
             
             updated_lead = df.iloc[target_idx].to_dict()
             return {
                 "success": True,
-                "message": "Buyer information updated.",
+                "message": "Buyer contact details updated.",
                 "lead": updated_lead
             }
         else:
+            lead_id = f"manual-{re.sub(r'[^a-zA-Z0-9]', '', payload.company_name)[:10].lower()}"
             new_row = {
-                "buyer_name": payload.buyer_name.strip(),
+                "lead_id": lead_id,
+                "id": lead_id,
+                "contact_name": clean_contact or "",
+                "buyer_name": clean_contact or "",
                 "company_name": payload.company_name.strip(),
+                "company": payload.company_name.strip(),
                 "email": payload.email.strip(),
                 "website": payload.website or "",
                 "country": payload.country or "International",
                 "buyer_type": payload.buyer_type or "Distributor",
                 "email_status": "valid",
+                "syntax_valid": "True",
                 "valid": "True",
+                "qualification_status": "pending",
+                "outreach_status": "not_eligible",
                 "is_duplicate": "False",
                 "source": "Manual Entry"
             }
@@ -505,20 +590,20 @@ async def update_lead_endpoint(payload: UpdateLeadRequest):
 @app.post("/api/search")
 async def discover_buyers_endpoint(payload: SearchRequest):
     """
-    Discovers international export buyers using live web search API.
-    Resolves product context from ProductCatalog and validates contacts in real-time.
+    Discovers international export buyers through configured search API provider.
+    Converts search results into structured buyer records without fake names.
+    Respects auto_ingest flag and provides pipeline summary counters.
     """
-    # Resolve product from catalog
     target_product = None
     if payload.product_id:
         target_product = ProductCatalog.get_product(payload.product_id)
     if not target_product:
         target_product = ProductCatalog.get_active_product()
 
-    product_name = payload.product or target_product.get("name") or "Himalayan Sound Healing Bowls"
-    product_id = target_product.get("id") or "himalayan-sound-healing-bowls"
-    keywords = payload.keywords or target_product.get("keywords")
-    buyer_type = payload.buyer_type or (target_product.get("buyer_types")[0] if target_product.get("buyer_types") else "Distributor")
+    product_name = payload.product or (target_product.get("name") if target_product else "Himalayan Sound Healing Bowls")
+    product_id = (target_product.get("id") if target_product else None) or payload.product_id or "himalayan-sound-healing-bowls"
+    keywords = payload.keywords or (target_product.get("keywords") if target_product else None)
+    buyer_type = payload.buyer_type or (target_product.get("buyer_types")[0] if target_product and target_product.get("buyer_types") else "Distributor")
 
     provider = WebBuyerSearchProvider()
 
@@ -530,6 +615,14 @@ async def discover_buyers_endpoint(payload: SearchRequest):
             keywords=keywords,
             limit=payload.limit or 25,
             product_id=product_id
+        )
+    except UnsupportedSearchProviderError as e:
+        raise HTTPException(
+            status_code=getattr(status, "HTTP_422_UNPROCESSABLE_CONTENT", 422),
+            detail={
+                "error": "UNSUPPORTED_SEARCH_PROVIDER",
+                "message": str(e)
+            }
         )
     except SearchProviderNotConfiguredError as e:
         raise HTTPException(
@@ -556,30 +649,31 @@ async def discover_buyers_endpoint(payload: SearchRequest):
             }
         )
 
-    # Ingest discovered leads to pipeline store
-    if leads:
+    # Ingest discovered leads if auto_ingest is enabled
+    if payload.auto_ingest and leads:
         try:
             leads_df = pd.DataFrame(leads)
-            rename_map = {
-                "contact_name": "buyer_name",
-                "company_name": "company_name",
-                "source": "source_platform"
-            }
-            mapped_df = leads_df.rename(columns=rename_map)
-            
-            if BUYERS_CSV.exists() and BUYERS_CSV.stat().st_size > 100:
+            if BUYERS_CSV.exists() and BUYERS_CSV.stat().st_size > 50:
                 try:
                     existing_df = pd.read_csv(BUYERS_CSV, dtype=str).fillna("")
-                    combined_df = pd.concat([existing_df, mapped_df], ignore_index=True)
+                    combined_df = pd.concat([existing_df, leads_df], ignore_index=True)
                 except Exception:
-                    combined_df = mapped_df
+                    combined_df = leads_df
             else:
-                combined_df = mapped_df
+                combined_df = leads_df
 
-            processed_df, stats = EmailValidator.process_and_deduplicate(combined_df)
+            processed_df, _ = EmailValidator.process_and_deduplicate(combined_df)
             processed_df.to_csv(BUYERS_CSV, index=False)
         except Exception as e:
             print(f"Error ingesting search leads: {e}")
+
+    # Compute pipeline summary metrics
+    total_found = len(leads)
+    with_email_count = len([l for l in leads if l.get("email")])
+    valid_email_count = len([l for l in leads if l.get("email_status") == "valid"])
+    ai_qualified_count = len([l for l in leads if l.get("qualification_status") == "qualified"])
+    outreach_eligible_count = len([l for l in leads if l.get("outreach_status") == "eligible"])
+    excluded_count = total_found - outreach_eligible_count
 
     query_str = provider.build_search_query(
         product=product_name,
@@ -598,23 +692,23 @@ async def discover_buyers_endpoint(payload: SearchRequest):
         "searched_at": searched_at,
         "product_id": product_id,
         "product_name": product_name,
-        "total_found": len(leads),
-        "count": len(leads),
+        "total_found": total_found,
+        "count": total_found,
+        "pipeline_summary": {
+            "total_discovered": total_found,
+            "with_email": with_email_count,
+            "valid_email": valid_email_count,
+            "ai_qualified": ai_qualified_count,
+            "outreach_eligible": outreach_eligible_count,
+            "excluded": excluded_count
+        },
         "buyers": leads,
-        "results": leads,
-        "query_details": {
-            "product_id": product_id,
-            "product": product_name,
-            "country": payload.country,
-            "buyer_type": buyer_type,
-            "keywords": keywords,
-            "limit": payload.limit
-        }
+        "results": leads
     }
 
 
 # ==========================================
-# 4. UPLOAD & INGESTION
+# 5. UPLOAD & INGESTION
 # ==========================================
 @app.post("/api/upload")
 async def upload_leads_csv(file: UploadFile = File(...)):
@@ -645,13 +739,23 @@ async def upload_leads_csv(file: UploadFile = File(...)):
         raise HTTPException(status_code=500, detail=f"Failed to process CSV: {str(e)}")
 
 @app.post("/api/validate")
-async def validate_single_email_endpoint(email: str = Form(...)):
-    result = validate_email_address(email)
-    return result
+async def validate_single_email_endpoint(
+    payload: Optional[EmailValidateRequest] = None,
+    email: Optional[str] = Form(default=None)
+):
+    target_email = payload.email if payload and payload.email is not None else email
+    result = validate_email_address(target_email)
+    return {
+        "email": result.get("email"),
+        "status": result.get("status"),
+        "syntax_valid": result.get("syntax_valid", False),
+        "valid": result.get("valid", False),
+        "reason": result.get("reason", "")
+    }
 
 
 # ==========================================
-# 5. AI CLASSIFICATION
+# 6. AI QUALIFICATION
 # ==========================================
 @app.get("/api/classification")
 async def get_classification_data(product_id: Optional[str] = None):
@@ -687,15 +791,11 @@ async def get_classification_data(product_id: Optional[str] = None):
         "individual_leads": ind_leads
     }
 
-class ClassifyRequest(BaseModel):
-    product_id: Optional[str] = None
-    product_name: Optional[str] = None
-
 @app.post("/api/classify")
 async def run_classification(payload: Optional[ClassifyRequest] = None):
     pid = payload.product_id if payload else None
     pname = payload.product_name if payload else None
-    success, status_code, msg, summary = LeadClassifier.execute_classification(
+    success, status_code, msg, summary = LeadClassifier.execute_qualification(
         product_id=pid,
         product_name=pname
     )
@@ -711,91 +811,181 @@ async def run_classification(payload: Optional[ClassifyRequest] = None):
 
 
 # ==========================================
-# 6. CAMPAIGN DISPATCH
+# 7. CAMPAIGN DISPATCH
 # ==========================================
 @app.post("/api/send")
 async def send_campaign(payload: SendCampaignRequest):
-    # Block demo data from receiving live outreach
+    # 1. Block demo data from entering live outreach
     if payload.audience.lower() == "demo" or (payload.custom_email and "-demo." in payload.custom_email.lower()):
         raise HTTPException(
             status_code=422,
             detail={
                 "error": "DEMO_DATA_OUTREACH_BLOCKED",
-                "message": "Demo data cannot be sent live outreach."
+                "message": "Demo buyers cannot be targeted for live outreach."
             }
         )
 
-    custom_recipient = None
-    if payload.audience.lower() == "custom":
+    # 2. Custom Single Email Send (Test Email)
+    if payload.audience.lower() == "custom" or payload.custom_email:
         if not payload.custom_email:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Custom recipient requires a valid email address."
             )
-        custom_recipient = {
-            "email": payload.custom_email.strip(),
-            "name": (payload.custom_buyer_name or "").strip(),
-            "company": (payload.custom_company_name or "").strip(),
-            "country": (payload.custom_country or "").strip(),
-            "buyer_type": (payload.custom_buyer_type or "").strip()
+        
+        val_res = validate_email_address(payload.custom_email)
+        if not val_res.get("syntax_valid"):
+            raise HTTPException(
+                status_code=422,
+                detail="Recipient email address is invalid."
+            )
+
+        target_prod = ProductCatalog.get_product(payload.product_id) if payload.product_id else ProductCatalog.get_active_product()
+        subj = payload.subject or (target_prod.get("email_subject_template") if target_prod else DEFAULT_SUBJECT)
+        body = payload.body_template or (target_prod.get("email_body_template") if target_prod else DEFAULT_BODY)
+        prod_name = target_prod.get("name") if target_prod else "Himalayan Sound Healing Bowls"
+
+        clean_sub = EmailSender.personalize_text(
+            subj,
+            contact_name=payload.custom_buyer_name,
+            company_name=payload.custom_company_name,
+            country=payload.custom_country,
+            buyer_type=payload.custom_buyer_type,
+            product=prod_name
+        )
+        clean_body = EmailSender.personalize_text(
+            body,
+            contact_name=payload.custom_buyer_name,
+            company_name=payload.custom_company_name,
+            country=payload.custom_country,
+            buyer_type=payload.custom_buyer_type,
+            product=prod_name
+        )
+
+        pdf_att = "assets/company_presentation.pdf" if payload.attach_presentation else None
+        success, error_msg = EmailSender.send_smtp_email(
+            to_email=payload.custom_email.strip(),
+            subject=clean_sub,
+            body_text=clean_body,
+            attachment_path=pdf_att
+        )
+
+        status_str = "SENT" if success else "FAILED"
+        ActivityLogger.log_activity(
+            buyer_name=payload.custom_buyer_name or "Test Recipient",
+            company=payload.custom_company_name or "Custom Test",
+            email=payload.custom_email.strip(),
+            classification="custom",
+            mode="SMTP",
+            status=status_str,
+            error=error_msg if not success else "",
+            campaign=prod_name
+        )
+
+        return {
+            "success": success,
+            "dispatched": 1 if success else 0,
+            "failed": 0 if success else 1,
+            "results": {
+                "audience": "custom",
+                "sent_count": 1 if success else 0,
+                "failed_count": 0 if success else 1,
+                "results": [{
+                    "recipient": payload.custom_email.strip(),
+                    "status": "sent" if success else "failed",
+                    "error": error_msg if not success else None
+                }]
+            }
         }
 
-    # Resolve product templates if not custom provided
+    # 3. Batch Campaign Dispatch with Authoritative Eligibility
     target_prod = ProductCatalog.get_product(payload.product_id) if payload.product_id else ProductCatalog.get_active_product()
+    prod_id = target_prod.get("id") if target_prod else (payload.product_id or "himalayan-sound-healing-bowls")
     subj = payload.subject or (target_prod.get("email_subject_template") if target_prod else DEFAULT_SUBJECT)
     body = payload.body_template or (target_prod.get("email_body_template") if target_prod else DEFAULT_BODY)
-    prod_id = target_prod.get("id") if target_prod else payload.product_id
-    prod_name = target_prod.get("name") if target_prod else None
+    pdf_path = target_prod.get("catalog_path") if target_prod else "assets/company_presentation.pdf"
 
-    results = EmailSender.send_campaign(
-        audience=payload.audience,
-        subject=subj,
+    results = EmailSender.execute_campaign(
+        product_id=prod_id,
+        lead_ids=payload.lead_ids,
+        subject_template=subj,
         body_template=body,
         attach_presentation=payload.attach_presentation,
-        custom_recipient=custom_recipient,
-        product_id=prod_id,
-        campaign_id=payload.campaign_id,
-        product_name=prod_name
+        catalog_path=pdf_path
     )
 
+    if not results.get("success") and results.get("error") == "DAILY_SEND_LIMIT_EXCEEDED":
+        raise HTTPException(
+            status_code=422,
+            detail=results
+        )
+
     return {
-        "success": results["sent_count"] > 0 or (results["total_targeted"] == 0 and results["skipped_duplicates"] > 0),
+        "success": results.get("dispatched", 0) > 0 or (results.get("total_targeted", 0) == 0 and results.get("skipped", 0) > 0),
         "results": results
     }
 
 @app.post("/api/send/test")
 async def send_test_email(payload: TestEmailRequest):
     """Dispatches a real single test email via Gmail SMTP for verification."""
+    val_res = validate_email_address(payload.recipient_email)
+    if not val_res.get("syntax_valid"):
+        raise HTTPException(
+            status_code=422,
+            detail="Recipient email address has invalid syntax."
+        )
+
     target_prod = ProductCatalog.get_product(payload.product_id) if payload.product_id else ProductCatalog.get_active_product()
     subj = payload.subject or (target_prod.get("email_subject_template") if target_prod else DEFAULT_SUBJECT)
     body = payload.body_template or (target_prod.get("email_body_template") if target_prod else DEFAULT_BODY)
+    prod_name = target_prod.get("name") if target_prod else "Himalayan Sound Healing Bowls"
 
-    custom_recipient = {
-        "email": payload.recipient_email.strip(),
-        "name": (payload.recipient_name or "").strip() or "Test Recipient",
-        "company": (payload.company_name or "").strip() or "Sample Export Partner",
-        "country": (payload.country or "").strip() or "United States",
-        "buyer_type": (payload.buyer_type or "").strip() or "Distributor"
-    }
+    clean_sub = EmailSender.personalize_text(
+        subj,
+        contact_name=payload.recipient_name,
+        company_name=payload.company_name,
+        country=payload.country,
+        buyer_type=payload.buyer_type,
+        product=prod_name
+    )
+    clean_body = EmailSender.personalize_text(
+        body,
+        contact_name=payload.recipient_name,
+        company_name=payload.company_name,
+        country=payload.country,
+        buyer_type=payload.buyer_type,
+        product=prod_name
+    )
 
-    results = EmailSender.send_campaign(
-        audience="custom",
-        subject=subj,
-        body_template=body,
-        attach_presentation=payload.attach_presentation,
-        custom_recipient=custom_recipient,
-        product_id=target_prod.get("id") if target_prod else None,
-        product_name=target_prod.get("name") if target_prod else None
+    pdf_att = "assets/company_presentation.pdf" if payload.attach_presentation else None
+    success, error_msg = EmailSender.send_smtp_email(
+        to_email=payload.recipient_email.strip(),
+        subject=clean_sub,
+        body_text=clean_body,
+        attachment_path=pdf_att
+    )
+
+    status_str = "SENT" if success else "FAILED"
+    ActivityLogger.log_activity(
+        buyer_name=payload.recipient_name or "Test Recipient",
+        company=payload.company_name or "Test Organization",
+        email=payload.recipient_email.strip(),
+        classification="custom",
+        mode="SMTP_TEST",
+        status=status_str,
+        error=error_msg if not success else "",
+        campaign=f"[TEST] {prod_name}"
     )
 
     return {
-        "success": results["sent_count"] > 0,
-        "results": results
+        "success": success,
+        "dispatched": 1 if success else 0,
+        "error": error_msg if not success else None
     }
 
 
 # ==========================================
-# 7. LOGGING & REPORTS
+# 8. LOGGING & REPORTS
 # ==========================================
 @app.get("/api/activity")
 async def get_recent_activity(limit: int = 100):
@@ -818,7 +1008,7 @@ async def download_campaign_report():
 
 
 # ==========================================
-# 8. SETTINGS
+# 9. SETTINGS & DIAGNOSTICS
 # ==========================================
 @app.get("/api/settings")
 async def get_settings():
@@ -835,6 +1025,10 @@ async def get_settings():
         masked_user = username[:3] + "***" if len(username) >= 3 else username + "***"
         masked_gmail = f"{masked_user}@{domain}"
 
+    search_status = "READY" if search_cfg.get("api_key") else "NOT_CONFIGURED"
+    gemini_status = "READY" if gemini_key else "NOT_CONFIGURED"
+    gmail_status = "READY" if (gmail_user and gmail_pass) else "NOT_CONFIGURED"
+
     return {
         "target_product": settings.get("SEARCH_KEYWORD", "Himalayan Sound Healing Bowls"),
         "send_delay": int(settings.get("SEND_DELAY", 1)),
@@ -843,12 +1037,14 @@ async def get_settings():
         "smtp_host": settings.get("SMTP_HOST", "smtp.gmail.com"),
         "smtp_port": int(settings.get("SMTP_PORT", 587)),
         "search_configured": bool(search_cfg.get("api_key")),
-        "search_provider": search_cfg.get("provider", "google_cse"),
+        "search_status": search_status,
+        "search_provider": search_cfg.get("provider", "serper"),
         "gemini_configured": bool(gemini_key),
+        "gemini_status": gemini_status,
         "gemini_model": gemini_model,
         "gmail_configured": bool(gmail_user and gmail_pass),
+        "gmail_status": gmail_status,
         "gmail_account_masked": masked_gmail,
-        "status": "operational",
         "settings": settings
     }
 
@@ -879,7 +1075,6 @@ async def update_settings(payload: SettingsUpdateRequest):
 @app.post("/api/settings/test-smtp")
 async def test_smtp_connection():
     """Performs live SMTP handshake and authentication with Gmail without dispatching emails."""
-    import smtplib
     settings = load_settings()
     smtp_host = settings.get("SMTP_HOST", "smtp.gmail.com")
     smtp_port = int(settings.get("SMTP_PORT", 587))
@@ -902,7 +1097,7 @@ async def test_smtp_connection():
         }
     except Exception as e:
         raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
+            status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"SMTP Connection Failed: {str(e)}"
         )
 
@@ -992,4 +1187,3 @@ async def get_invalid_leads():
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to read invalid leads: {str(e)}")
-
