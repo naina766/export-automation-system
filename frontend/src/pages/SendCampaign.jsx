@@ -28,6 +28,7 @@ import { useProduct } from '../context/ProductContext';
 import Notification from '../components/Notification';
 import StatusBadge from '../components/StatusBadge';
 import LoadingSpinner from '../components/LoadingSpinner';
+import PipelineStepper from '../components/PipelineStepper';
 import { formatBusinessError } from '../services/errorHandler';
 
 const DEFAULT_SUBJECT = "Export Supply Partnership: {{product_name}} for {{company_name}}";
@@ -264,6 +265,17 @@ export const SendCampaign = () => {
         type={notification.type}
         message={notification.message}
         onClose={() => setNotification({ type: '', message: '' })}
+      />
+
+      {/* Official 6-Stage Pipeline Stepper */}
+      <PipelineStepper 
+        currentStage={5} 
+        stats={{ 
+          total_leads: allLeads.length,
+          valid_emails: eligibleLeads.length + excludedLeads.length,
+          qualified_buyers: eligibleLeads.length,
+          successful_sends: (allLeads.filter(l => l.outreach_status === 'sent' || l.sent === true).length)
+        }} 
       />
 
       {/* Header */}

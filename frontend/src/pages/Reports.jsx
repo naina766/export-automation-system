@@ -27,6 +27,7 @@ import StatusBadge from '../components/StatusBadge';
 import DataTable from '../components/DataTable';
 import LoadingSpinner from '../components/LoadingSpinner';
 import Notification from '../components/Notification';
+import PipelineStepper from '../components/PipelineStepper';
 import { formatBusinessError } from '../services/errorHandler';
 
 export const Reports = () => {
@@ -181,6 +182,18 @@ export const Reports = () => {
         type={notification.type}
         message={notification.message}
         onClose={() => setNotification({ type: '', message: '' })}
+      />
+
+      {/* Official 6-Stage Pipeline Stepper */}
+      <PipelineStepper 
+        currentStage={6} 
+        stats={{ 
+          total_leads: total,
+          valid_emails: validContacts,
+          qualified_buyers: qualified,
+          successful_sends: emailsSent,
+          total_campaigns: 1
+        }} 
       />
 
       {/* Header & Instant Filter Bar */}

@@ -62,27 +62,70 @@ export const Sidebar = ({ isOpen, onClose }) => {
           </div>
 
           {/* Navigation links */}
-          <nav className="p-3 space-y-1">
-            {navItems.map((item) => {
-              const Icon = item.icon;
-              return (
-                <NavLink
-                  key={item.path}
-                  to={item.path}
-                  onClick={onClose}
-                  className={({ isActive }) => `
-                    flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all duration-200
-                    ${isActive 
-                      ? 'bg-purple-600/15 text-purple-300 border border-purple-500/40 shadow-[0_0_15px_-3px_rgba(124,58,237,0.25)] font-bold' 
-                      : 'text-[#94A3B8] hover:text-[#F8FAFC] hover:bg-white/[0.04] border border-transparent'}
-                  `}
-                >
-                  <Icon className="w-4 h-4 flex-shrink-0" />
-                  <span>{item.name}</span>
-                </NavLink>
-              );
-            })}
-          </nav>
+          <div className="p-3 space-y-4">
+            <div>
+              <div className="px-3 pb-1.5 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                Export Pipeline
+              </div>
+              <nav className="space-y-1">
+                {[
+                  { name: 'Dashboard', path: '/', icon: LayoutDashboard },
+                  { name: '1. Buyer Discovery', path: '/discover', icon: Globe },
+                  { name: '2. AI Qualification', path: '/classify', icon: Sparkles },
+                  { name: '3. Gmail Campaign', path: '/send', icon: Send },
+                  { name: '4. Tracking & Reports', path: '/reports', icon: BarChart3 },
+                ].map((item) => {
+                  const Icon = item.icon;
+                  return (
+                    <NavLink
+                      key={item.path}
+                      to={item.path}
+                      onClick={onClose}
+                      className={({ isActive }) => `
+                        flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all duration-200
+                        ${isActive 
+                          ? 'bg-purple-600/15 text-purple-300 border border-purple-500/40 shadow-[0_0_15px_-3px_rgba(124,58,237,0.25)] font-bold' 
+                          : 'text-[#94A3B8] hover:text-[#F8FAFC] hover:bg-white/[0.04] border border-transparent'}
+                      `}
+                    >
+                      <Icon className="w-4 h-4 flex-shrink-0" />
+                      <span>{item.name}</span>
+                    </NavLink>
+                  );
+                })}
+              </nav>
+            </div>
+
+            <div>
+              <div className="px-3 pb-1.5 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                Management
+              </div>
+              <nav className="space-y-1">
+                {[
+                  { name: 'Import Buyers (CSV)', path: '/upload', icon: UploadCloud },
+                  { name: 'Platform Settings', path: '/settings', icon: SettingsIcon },
+                ].map((item) => {
+                  const Icon = item.icon;
+                  return (
+                    <NavLink
+                      key={item.path}
+                      to={item.path}
+                      onClick={onClose}
+                      className={({ isActive }) => `
+                        flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all duration-200
+                        ${isActive 
+                          ? 'bg-purple-600/15 text-purple-300 border border-purple-500/40 shadow-[0_0_15px_-3px_rgba(124,58,237,0.25)] font-bold' 
+                          : 'text-[#94A3B8] hover:text-[#F8FAFC] hover:bg-white/[0.04] border border-transparent'}
+                      `}
+                    >
+                      <Icon className="w-4 h-4 flex-shrink-0" />
+                      <span>{item.name}</span>
+                    </NavLink>
+                  );
+                })}
+              </nav>
+            </div>
+          </div>
         </div>
 
         {/* Minimal Clean Footer */}

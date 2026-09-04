@@ -452,6 +452,7 @@ async def get_sample_workflow_buyers(product_id: Optional[str] = None):
         "results": sample_records
     }
 
+@app.post("/api/extraction")
 @app.post("/api/leads/enrich")
 async def retry_lead_enrichment(payload: EnrichLeadRequest):
     """Re-attempts email extraction from a buyer's company website with SSRF protection."""
@@ -587,6 +588,7 @@ async def update_lead_endpoint(payload: UpdateLeadRequest):
         raise HTTPException(status_code=500, detail=f"Failed to update buyer: {str(e)}")
 
 
+@app.post("/api/discovery")
 @app.post("/api/search")
 async def discover_buyers_endpoint(payload: SearchRequest):
     """
@@ -738,6 +740,7 @@ async def upload_leads_csv(file: UploadFile = File(...)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to process CSV: {str(e)}")
 
+@app.post("/api/validation")
 @app.post("/api/validate")
 async def validate_single_email_endpoint(
     payload: Optional[EmailValidateRequest] = None,
@@ -813,6 +816,7 @@ async def run_classification(payload: Optional[ClassifyRequest] = None):
 # ==========================================
 # 7. CAMPAIGN DISPATCH
 # ==========================================
+@app.post("/api/campaign")
 @app.post("/api/send")
 async def send_campaign(payload: SendCampaignRequest):
     # 1. Block demo data from entering live outreach
@@ -992,6 +996,7 @@ async def get_recent_activity(limit: int = 100):
     logs = ActivityLogger.get_recent_logs(limit=limit)
     return {"total": len(logs), "logs": logs}
 
+@app.get("/api/reports")
 @app.get("/api/report")
 async def get_campaign_report(product_id: Optional[str] = None):
     metrics = ReportGenerator.get_campaign_metrics(product_id=product_id)

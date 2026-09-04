@@ -15,6 +15,7 @@ import { useProduct } from '../context/ProductContext';
 import StatusBadge from '../components/StatusBadge';
 import Notification from '../components/Notification';
 import LoadingSpinner from '../components/LoadingSpinner';
+import PipelineStepper from '../components/PipelineStepper';
 import { formatBusinessError } from '../services/errorHandler';
 
 export const Classification = () => {
@@ -97,6 +98,17 @@ export const Classification = () => {
         type={notification.type}
         message={notification.message}
         onClose={() => setNotification({ type: '', message: '' })}
+      />
+
+      {/* Official 6-Stage Pipeline Stepper */}
+      <PipelineStepper 
+        currentStage={4} 
+        stats={{ 
+          total_leads: allLeads.length,
+          valid_emails: allLeads.filter(l => l.email_status === 'valid' || l.syntax_valid === 'True' || l.syntax_valid === true).length,
+          qualified_buyers: businessLeads.length,
+          business_leads: businessLeads.length
+        }} 
       />
 
       {/* Header Banner */}
