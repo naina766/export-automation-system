@@ -172,7 +172,7 @@ class WebBuyerSearchProvider(BuyerSearchProvider):
 
                 parsed_items = [parse_search_item(item, country, buyer_type) for item in raw_items]
 
-                # Concurrently inspect public websites for missing contact info (bounded concurrency)
+                # Concurrently inspect public websites for missing contact info (bounded concurrency with 3.5s timeout)
                 async def enrich_item(item):
                     if not item.get("email") and item.get("website"):
                         try:
@@ -185,8 +185,14 @@ class WebBuyerSearchProvider(BuyerSearchProvider):
                             pass
                     return item
 
-                tasks = [enrich_item(item) for item in parsed_items[:limit]]
-                parsed_items = list(await asyncio.gather(*tasks))
+                try:
+                    tasks = [enrich_item(item) for item in parsed_items[:min(limit, 10)]]
+                    enriched = await asyncio.wait_for(asyncio.gather(*tasks), timeout=3.5)
+                    parsed_items = list(enriched) + parsed_items[min(limit, 10):]
+                except (asyncio.TimeoutError, Exception):
+                    # Gracefully keep parsed search snippet data if external enrichment took too long
+                    pass
+
 
         except httpx.TimeoutException:
             raise SearchProviderAPIError("Live search request timed out. Please try again.")

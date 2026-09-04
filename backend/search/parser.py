@@ -140,43 +140,63 @@ def parse_search_item(item: Dict[str, Any], query_country: Optional[str] = None,
         "source": "web_search"
     }
 
+IGNORED_EMAIL_DOMAINS = {
+    "example.com", "wixpress.com", "shopify.com", "sentry.io",
+    "cloudflare.com", "schema.org", "domain.com", "myshopify.com",
+    "googletagmanager.com", "wordpress.org", "github.com", "gravatar.com"
+}
+
 async def extract_contact_from_public_website(website_url: str, client: httpx.AsyncClient) -> Dict[str, Optional[str]]:
     """
-    Politely inspects public website contact or about page for publicly listed emails.
-    Protected with SSRF validation, bounded timeouts, and strict content checks.
+    Politely inspects public website contact or homepage for publicly listed emails.
+    Protected with SSRF validation, bounded timeouts (2.0s), and strict content checks.
     Never fabricates data; returns None if not found or unreachable.
     """
     if not website_url or not is_safe_url(website_url):
         return {"email": None, "phone": None}
 
-    parsed = urlparse(website_url)
-    base_url = f"{parsed.scheme}://{parsed.netloc}"
-    targets = [f"{base_url}/contact", f"{base_url}/about"]
+    try:
+        parsed = urlparse(website_url)
+        if not parsed.scheme or not parsed.netloc:
+            return {"email": None, "phone": None}
+        base_url = f"{parsed.scheme}://{parsed.netloc}"
+        targets = [f"{base_url}/", f"{base_url}/contact", f"{base_url}/pages/contact", f"{base_url}/contact-us", f"{base_url}/about"]
 
-    for target in targets:
-        if not is_safe_url(target):
-            continue
-        try:
-            resp = await client.get(
-                target,
-                timeout=3.0,
-                headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"},
-                follow_redirects=True
-            )
-            if resp.status_code == 200:
-                html = resp.text[:100000]  # Bound response payload size
-                mailto_match = re.search(r'mailto:([a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+)', html, re.I)
-                if mailto_match:
-                    found = mailto_match.group(1).lower()
-                    if not found.endswith((".png", ".jpg", ".gif", ".webp", ".svg")):
-                        return {"email": found, "phone": None}
+        for target in targets:
+            if not is_safe_url(target):
+                continue
+            try:
+                resp = await client.get(
+                    target,
+                    timeout=2.0,
+                    headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"},
+                    follow_redirects=True
+                )
+                if resp.status_code == 200:
+                    html = resp.text[:60000]  # Bound response payload size
+                    
+                    # 1. Search mailto links
+                    mailto_matches = re.findall(r'mailto:([a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+)', html, re.I)
+                    for m in mailto_matches:
+                        clean_m = m.lower().rstrip(".,;:!?)'\"")
+                        if not clean_m.endswith((".png", ".jpg", ".gif", ".webp", ".svg", ".css", ".js")):
+                            domain = clean_m.split("@")[-1] if "@" in clean_m else ""
+                            if domain and domain not in IGNORED_EMAIL_DOMAINS and not any(ign in domain for ign in ["example", "sentry", "shopify", "wix"]):
+                                return {"email": clean_m, "phone": None}
 
-                email_match = EMAIL_SNIPPET_REGEX.search(html)
-                if email_match:
-                    found = email_match.group(0).lower()
-                    if not found.endswith((".png", ".jpg", ".gif", ".webp", ".svg")):
-                        return {"email": found, "phone": None}
-        except Exception:
-            pass
+                    # 2. Search regex snippet in text
+                    matches = EMAIL_SNIPPET_REGEX.findall(html)
+                    for m in matches:
+                        clean_m = m.lower().rstrip(".,;:!?)'\"")
+                        if not clean_m.endswith((".png", ".jpg", ".gif", ".webp", ".svg", ".css", ".js")):
+                            domain = clean_m.split("@")[-1] if "@" in clean_m else ""
+                            if domain and domain not in IGNORED_EMAIL_DOMAINS and not any(ign in domain for ign in ["example", "sentry", "shopify", "wix"]):
+                                return {"email": clean_m, "phone": None}
+            except Exception:
+                pass
+    except Exception:
+        pass
 
     return {"email": None, "phone": None}
+
+
