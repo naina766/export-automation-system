@@ -66,7 +66,9 @@ allowed_origins = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
     "http://localhost:3000",
-    "http://127.0.0.1:3000"
+    "http://127.0.0.1:3000",
+    "https://export-automation-system-two.vercel.app",
+    "https://export-automation-system.onrender.com"
 ]
 if frontend_env_url and frontend_env_url not in allowed_origins:
     allowed_origins.append(frontend_env_url)
@@ -78,6 +80,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
 
 ActivityLogger.ensure_log_file()
 
@@ -1275,3 +1278,38 @@ async def get_invalid_leads():
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to read invalid leads: {str(e)}")
+
+# ==========================================
+# 11. FRONTEND STATIC SERVING & SPA FALLBACK
+# ==========================================
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
+
+FRONTEND_DIST = ROOT_DIR / "frontend" / "dist"
+if FRONTEND_DIST.exists() and (FRONTEND_DIST / "assets").exists():
+    app.mount("/assets", StaticFiles(directory=str(FRONTEND_DIST / "assets")), name="static_assets")
+
+@app.get("/")
+async def root_endpoint():
+    frontend_index = FRONTEND_DIST / "index.html"
+    if frontend_index.exists():
+        return FileResponse(str(frontend_index))
+    return {
+        "service": "EXPORT Automation System API",
+        "status": "online",
+        "version": "2.0.0",
+        "docs": "/docs",
+        "health": "/api/health",
+        "message": "FastAPI Backend is online and operational."
+    }
+
+@app.get("/{full_path:path}")
+async def serve_spa_catchall(full_path: str):
+    """Fallback handler to serve React SPA client routes on Render."""
+    if full_path.startswith("api/") or full_path.startswith("docs") or full_path.startswith("openapi.json"):
+        raise HTTPException(status_code=404, detail="API endpoint not found")
+    frontend_index = FRONTEND_DIST / "index.html"
+    if frontend_index.exists():
+        return FileResponse(str(frontend_index))
+    raise HTTPException(status_code=404, detail=f"Path '/{full_path}' not found on backend.")
+
