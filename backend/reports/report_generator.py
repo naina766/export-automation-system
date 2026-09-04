@@ -72,7 +72,7 @@ class ReportGenerator:
         # 1. Analyze buyers.csv
         if BUYERS_CSV.exists():
             try:
-                df = pd.read_csv(BUYERS_CSV, dtype=str).fillna("")
+                df = pd.read_csv(BUYERS_CSV, dtype=str, encoding="utf-8").fillna("")
                 if "is_demo" in df.columns:
                     df = df[df["is_demo"].astype(str).str.lower() != "true"]
                 if "email" in df.columns:
@@ -136,7 +136,7 @@ class ReportGenerator:
         # 2. Analyze business & individual classification datasets
         if BUSINESS_EMAILS_CSV.exists():
             try:
-                biz_df = pd.read_csv(BUSINESS_EMAILS_CSV, dtype=str).fillna("")
+                biz_df = pd.read_csv(BUSINESS_EMAILS_CSV, dtype=str, encoding="utf-8").fillna("")
                 metrics["business_leads"] = len(biz_df)
                 metrics["qualified_buyers"] = len(biz_df)
 
@@ -151,7 +151,7 @@ class ReportGenerator:
 
         if INDIVIDUAL_EMAILS_CSV.exists():
             try:
-                ind_df = pd.read_csv(INDIVIDUAL_EMAILS_CSV, dtype=str).fillna("")
+                ind_df = pd.read_csv(INDIVIDUAL_EMAILS_CSV, dtype=str, encoding="utf-8").fillna("")
                 metrics["individual_leads"] = len(ind_df)
             except Exception:
                 pass
@@ -159,7 +159,7 @@ class ReportGenerator:
         # 3. Analyze sent_log.csv
         if SENT_LOG_CSV.exists():
             try:
-                sent_df = pd.read_csv(SENT_LOG_CSV, dtype=str).fillna("")
+                sent_df = pd.read_csv(SENT_LOG_CSV, dtype=str, encoding="utf-8").fillna("")
                 if product_id and "product_id" in sent_df.columns:
                     sent_df = sent_df[sent_df["product_id"] == product_id]
                 if not sent_df.empty:

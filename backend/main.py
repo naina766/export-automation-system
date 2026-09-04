@@ -307,7 +307,7 @@ async def get_all_leads(product_id: Optional[str] = None):
         return {"total": 0, "leads": []}
 
     try:
-        df = pd.read_csv(BUYERS_CSV, dtype=str).fillna("")
+        df = pd.read_csv(BUYERS_CSV, dtype=str, encoding="utf-8").fillna("")
         if product_id and "product_id" in df.columns:
             df = df[df["product_id"] == product_id]
         
@@ -475,7 +475,7 @@ async def retry_lead_enrichment(payload: EnrichLeadRequest):
         if val_res.get("syntax_valid") is True:
             try:
                 if BUYERS_CSV.exists():
-                    df = pd.read_csv(BUYERS_CSV, dtype=str).fillna("")
+                    df = pd.read_csv(BUYERS_CSV, dtype=str, encoding="utf-8").fillna("")
                     matched = False
                     for idx, row in df.iterrows():
                         if (payload.company and row.get("company_name", "").strip().lower() == payload.company.strip().lower()) or \
@@ -487,7 +487,7 @@ async def retry_lead_enrichment(payload: EnrichLeadRequest):
                             matched = True
                             break
                     if matched:
-                        df.to_csv(BUYERS_CSV, index=False)
+                        df.to_csv(BUYERS_CSV, index=False, encoding="utf-8")
             except Exception as e:
                 print(f"Error updating buyer email in CSV: {e}")
 
@@ -517,7 +517,7 @@ async def update_lead_endpoint(payload: UpdateLeadRequest):
         if not BUYERS_CSV.exists():
             raise HTTPException(status_code=404, detail="Lead store is empty.")
 
-        df = pd.read_csv(BUYERS_CSV, dtype=str).fillna("")
+        df = pd.read_csv(BUYERS_CSV, dtype=str, encoding="utf-8").fillna("")
         matched = False
         target_idx = None
 
@@ -546,7 +546,7 @@ async def update_lead_endpoint(payload: UpdateLeadRequest):
             df.at[target_idx, "email_status"] = "valid"
             df.at[target_idx, "syntax_valid"] = "True"
             df.at[target_idx, "valid"] = "True"
-            df.to_csv(BUYERS_CSV, index=False)
+            df.to_csv(BUYERS_CSV, index=False, encoding="utf-8")
             
             updated_lead = df.iloc[target_idx].to_dict()
             return {
@@ -576,7 +576,7 @@ async def update_lead_endpoint(payload: UpdateLeadRequest):
                 "source": "Manual Entry"
             }
             df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
-            df.to_csv(BUYERS_CSV, index=False)
+            df.to_csv(BUYERS_CSV, index=False, encoding="utf-8")
             return {
                 "success": True,
                 "message": "Buyer information updated.",
@@ -657,7 +657,7 @@ async def discover_buyers_endpoint(payload: SearchRequest):
             leads_df = pd.DataFrame(leads)
             if BUYERS_CSV.exists() and BUYERS_CSV.stat().st_size > 50:
                 try:
-                    existing_df = pd.read_csv(BUYERS_CSV, dtype=str).fillna("")
+                    existing_df = pd.read_csv(BUYERS_CSV, dtype=str, encoding="utf-8").fillna("")
                     combined_df = pd.concat([existing_df, leads_df], ignore_index=True)
                 except Exception:
                     combined_df = leads_df
@@ -665,7 +665,7 @@ async def discover_buyers_endpoint(payload: SearchRequest):
                 combined_df = leads_df
 
             processed_df, _ = EmailValidator.process_and_deduplicate(combined_df)
-            processed_df.to_csv(BUYERS_CSV, index=False)
+            processed_df.to_csv(BUYERS_CSV, index=False, encoding="utf-8")
         except Exception as e:
             print(f"Error ingesting search leads: {e}")
 
@@ -743,7 +743,7 @@ async def upload_leads_csv(file: UploadFile = File(...)):
             raise HTTPException(status_code=400, detail=err)
 
         processed_df, stats = EmailValidator.process_and_deduplicate(df)
-        processed_df.to_csv(BUYERS_CSV, index=False)
+        processed_df.to_csv(BUYERS_CSV, index=False, encoding="utf-8")
 
         return {
             "success": True,
@@ -781,7 +781,7 @@ async def get_classification_data(product_id: Optional[str] = None):
     biz_leads, ind_leads = [], []
     if BUSINESS_EMAILS_CSV.exists():
         try:
-            df_biz = pd.read_csv(BUSINESS_EMAILS_CSV, dtype=str).fillna("")
+            df_biz = pd.read_csv(BUSINESS_EMAILS_CSV, dtype=str, encoding="utf-8").fillna("")
             if product_id and "product_id" in df_biz.columns:
                 df_biz = df_biz[df_biz["product_id"] == product_id]
             biz_leads = df_biz.to_dict(orient="records")
@@ -790,7 +790,7 @@ async def get_classification_data(product_id: Optional[str] = None):
 
     if INDIVIDUAL_EMAILS_CSV.exists():
         try:
-            df_ind = pd.read_csv(INDIVIDUAL_EMAILS_CSV, dtype=str).fillna("")
+            df_ind = pd.read_csv(INDIVIDUAL_EMAILS_CSV, dtype=str, encoding="utf-8").fillna("")
             if product_id and "product_id" in df_ind.columns:
                 df_ind = df_ind[df_ind["product_id"] == product_id]
             ind_leads = df_ind.to_dict(orient="records")
@@ -1199,7 +1199,7 @@ async def get_invalid_leads():
         return {"total": 0, "invalid_leads": []}
 
     try:
-        df = pd.read_csv(BUYERS_CSV, dtype=str).fillna("")
+        df = pd.read_csv(BUYERS_CSV, dtype=str, encoding="utf-8").fillna("")
         invalid_mask = (df.get("email_status", "valid") != "valid") | (df.get("is_duplicate", "False").astype(str).str.lower() == "true")
         invalid_df = df[invalid_mask]
         return {

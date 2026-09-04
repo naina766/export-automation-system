@@ -388,7 +388,7 @@ GEMINI_MODEL=gemini-2.5-flash
 
 # 3. GMAIL SMTP SECURE OUTREACH TRANSPORT
 GMAIL_EMAIL=your_export_sales_email@gmail.com
-GMAIL_APP_PASSWORD=your_16_character_app_password
+GMAIL_APP_PASSWORD=your_16_characteruvicorn main:app --reload --port 8000_app_password
 
 SMTP_HOST=smtp.gmail.com
 SMTP_PORT=587
@@ -408,7 +408,7 @@ DAILY_SEND_LIMIT=100
 
 1. **Start the FastAPI Backend:**
    ```bash
-   uvicorn main:app --reload --port 8000
+   
    ```
    *The API will be available at `http://localhost:8000`. Interactive API docs are accessible at `http://localhost:8000/docs`.*
 
