@@ -5,6 +5,7 @@ Provides real-time discovery of international B2B buyers without scraping or dem
 """
 import os
 import sys
+import asyncio
 from pathlib import Path
 import httpx
 from typing import List, Dict, Any, Optional, Union
@@ -87,24 +88,25 @@ class WebBuyerSearchProvider(BuyerSearchProvider):
     ) -> str:
         """Construct an optimized B2B query string."""
         clean_product = (product or "Singing Bowls").strip()
-        terms = [f'"{clean_product}"']
+        # Keep product term clean without restrictive mandatory full-phrase quotes
+        terms = [clean_product]
 
         # Buyer type intent
         if buyer_type and buyer_type.lower() not in ["all", "all buyer types", ""]:
             terms.append(f'("{buyer_type}" OR wholesale OR distributor OR importer)')
         else:
-            terms.append('(wholesale OR distributor OR importer OR "sound healing studio")')
+            terms.append('wholesale distributor importer')
 
         # Target country
         if country and country.lower() not in ["all", "all countries", ""]:
-            terms.append(f'"{country.strip()}"')
+            terms.append(f'"{country.strip()}"' if " " in country.strip() else country.strip())
 
         # Keywords handling
         if keywords:
             if isinstance(keywords, str) and keywords.strip():
                 terms.append(keywords.strip())
             elif isinstance(keywords, list):
-                kw_str = " ".join([f'"{k.strip()}"' if " " in k.strip() else k.strip() for k in keywords if k.strip()])
+                kw_str = " ".join([k.strip() for k in keywords if k.strip()])
                 if kw_str:
                     terms.append(kw_str)
 
@@ -150,8 +152,15 @@ class WebBuyerSearchProvider(BuyerSearchProvider):
             async with httpx.AsyncClient(timeout=20.0) as client:
                 if self.provider == "serper":
                     raw_items = await self._search_serper(client, query, limit)
+                    # Resilient fallback if over-constrained query yielded 0 results
+                    if not raw_items:
+                        fallback_query = f"{product} wholesale distributor {country or ''}".strip()
+                        raw_items = await self._search_serper(client, fallback_query, limit)
                 elif self.provider == "brave":
                     raw_items = await self._search_brave(client, query, limit)
+                    if not raw_items:
+                        fallback_query = f"{product} wholesale distributor {country or ''}".strip()
+                        raw_items = await self._search_brave(client, fallback_query, limit)
                 elif self.provider == "tavily":
                     raw_items = await self._search_tavily(client, query, limit)
                 elif self.provider == "serpapi":
@@ -163,14 +172,21 @@ class WebBuyerSearchProvider(BuyerSearchProvider):
 
                 parsed_items = [parse_search_item(item, country, buyer_type) for item in raw_items]
 
-                # Inspect public websites for contact info when snippet lacks email
-                for item in parsed_items[:limit]:
+                # Concurrently inspect public websites for missing contact info (bounded concurrency)
+                async def enrich_item(item):
                     if not item.get("email") and item.get("website"):
-                        extra_contact = await extract_contact_from_public_website(item["website"], client)
-                        if extra_contact.get("email"):
-                            item["email"] = extra_contact["email"]
-                        if extra_contact.get("phone") and not item.get("phone"):
-                            item["phone"] = extra_contact["phone"]
+                        try:
+                            extra_contact = await extract_contact_from_public_website(item["website"], client)
+                            if extra_contact.get("email"):
+                                item["email"] = extra_contact["email"]
+                            if extra_contact.get("phone") and not item.get("phone"):
+                                item["phone"] = extra_contact["phone"]
+                        except Exception:
+                            pass
+                    return item
+
+                tasks = [enrich_item(item) for item in parsed_items[:limit]]
+                parsed_items = list(await asyncio.gather(*tasks))
 
         except httpx.TimeoutException:
             raise SearchProviderAPIError("Live search request timed out. Please try again.")

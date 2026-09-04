@@ -267,12 +267,12 @@ class LeadClassifier:
             match = res_by_id.get(l_id) or res_by_email.get(email)
             if match:
                 q_status = match.get("qualification_status") or ("qualified" if match.get("classification") == "business" else "needs_review")
-                df.at[idx, "qualification_status"] = q_status
-                df.at[idx, "buyer_type"] = match.get("buyer_type", "Distributor")
-                df.at[idx, "ai_score"] = match.get("score", 85 if q_status == "qualified" else 45)
-                df.at[idx, "ai_confidence"] = match.get("confidence", 0.9)
-                df.at[idx, "priority"] = match.get("priority", "high" if q_status == "qualified" else "medium")
-                df.at[idx, "ai_reason"] = match.get("reason", "Evaluated by AI qualification engine")
+                df.at[idx, "qualification_status"] = str(q_status)
+                df.at[idx, "buyer_type"] = str(match.get("buyer_type", "Distributor"))
+                df.at[idx, "ai_score"] = str(match.get("score", 85 if q_status == "qualified" else 45))
+                df.at[idx, "ai_confidence"] = str(match.get("confidence", 0.9))
+                df.at[idx, "priority"] = str(match.get("priority", "high" if q_status == "qualified" else "medium"))
+                df.at[idx, "ai_reason"] = str(match.get("reason", "Evaluated by AI qualification engine"))
                 df.at[idx, "classification"] = "business" if q_status == "qualified" else "individual"
 
                 # Outreach eligibility rule

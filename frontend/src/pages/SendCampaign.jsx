@@ -369,15 +369,33 @@ export const SendCampaign = () => {
                 </div>
 
                 {eligibleLeads.length === 0 ? (
-                  <div className="p-4 rounded-xl bg-[#050816] border border-[#1E293B] text-center space-y-2">
-                    <p className="text-xs text-slate-400">No outreach-eligible buyers for this product yet.</p>
-                    <button
-                      type="button"
-                      onClick={() => navigate('/discover')}
-                      className="px-3 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold transition-all"
-                    >
-                      Discover & Qualify Buyers
-                    </button>
+                  <div className="p-5 rounded-xl bg-[#050816] border border-amber-500/30 text-center space-y-3">
+                    <div className="w-8 h-8 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-400 flex items-center justify-center mx-auto">
+                      <AlertTriangle className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <div className="text-xs font-bold text-white">0 AI-Qualified Recipients Found</div>
+                      <p className="text-[11px] text-slate-400 mt-1 max-w-sm mx-auto">
+                        Buyers must have a valid email AND pass Stage 4 (AI Qualification) before entering Gmail outreach.
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
+                      <button
+                        type="button"
+                        onClick={() => navigate('/classify')}
+                        className="px-3.5 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold transition-all shadow cursor-pointer flex items-center gap-1.5"
+                      >
+                        <Sparkles className="w-3.5 h-3.5" />
+                        <span>Run AI Qualification</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setIsTestMode(true)}
+                        className="px-3 py-1.5 rounded-lg bg-[#0B1220] hover:bg-slate-800 text-slate-300 text-xs font-semibold border border-[#1E293B] cursor-pointer"
+                      >
+                        Send Single Test Email
+                      </button>
+                    </div>
                   </div>
                 ) : (
                   <div className="max-h-48 overflow-y-auto space-y-1.5 pr-1">

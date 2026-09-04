@@ -34,10 +34,10 @@ def test_query_construction_with_parameters():
         buyer_type="Distributor",
         keywords=["sound healing", "wellness"]
     )
-    assert '"Himalayan Singing Bowls"' in query
-    assert '"United States"' in query
+    assert "Himalayan Singing Bowls" in query
+    assert "United States" in query
     assert "Distributor" in query
-    assert '"sound healing"' in query
+    assert "sound healing" in query
     assert "wellness" in query
 
 def test_query_construction_with_string_keywords():
@@ -48,8 +48,8 @@ def test_query_construction_with_string_keywords():
         buyer_type="Wholesale Importer",
         keywords="meditation yoga studios"
     )
-    assert '"Singing Bowls"' in query
-    assert '"Germany"' in query
+    assert "Singing Bowls" in query
+    assert "Germany" in query
     assert "Wholesale Importer" in query
     assert "meditation yoga studios" in query
 
