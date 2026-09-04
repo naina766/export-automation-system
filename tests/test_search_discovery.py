@@ -194,3 +194,71 @@ def test_gmail_retry_mechanism_retries_transient_error():
             assert success is True
             assert status == "SENT"
             assert mock_smtp_cls.call_count == 2
+
+def test_discovery_pipeline_summary_and_valid_buyer_filtering():
+    from fastapi.testclient import TestClient
+    from main import app
+    client = TestClient(app)
+
+    mock_leads = [
+        {
+            "lead_id": "lead-1",
+            "company_name": "Valid Sound Buyer",
+            "company": "Valid Sound Buyer",
+            "email": "buyer@validsound.com",
+            "email_status": "valid",
+            "syntax_valid": True,
+            "is_duplicate": False,
+            "qualification_status": "qualified",
+            "outreach_status": "eligible"
+        },
+        {
+            "lead_id": "lead-2",
+            "company_name": "No Email Studio",
+            "company": "No Email Studio",
+            "email": None,
+            "email_status": "missing",
+            "syntax_valid": False,
+            "is_duplicate": False,
+            "qualification_status": "needs_review",
+            "outreach_status": "not_eligible"
+        },
+        {
+            "lead_id": "lead-3",
+            "company_name": "Malformed Email Co",
+            "company": "Malformed Email Co",
+            "email": "invalid@@co",
+            "email_status": "invalid",
+            "syntax_valid": False,
+            "is_duplicate": False,
+            "qualification_status": "needs_review",
+            "outreach_status": "not_eligible"
+        },
+        {
+            "lead_id": "lead-4",
+            "company_name": "Duplicate Lead",
+            "company": "Duplicate Lead",
+            "email": "buyer@validsound.com",
+            "email_status": "valid",
+            "syntax_valid": True,
+            "is_duplicate": True,
+            "qualification_status": "needs_review",
+            "outreach_status": "not_eligible"
+        }
+    ]
+
+    with patch("search.web_search_provider.WebBuyerSearchProvider.search", return_value=mock_leads):
+        res = client.post("/api/discovery", json={"product": "Singing Bowls", "limit": 10, "auto_ingest": False})
+        assert res.status_code == 200
+        data = res.json()
+        assert data["success"] is True
+        summary = data["pipeline_summary"]
+        assert summary["total_discovered"] == 4
+        assert summary["valid_emails"] == 1
+        assert summary["missing_emails"] == 1
+        assert summary["invalid_emails"] == 1
+        assert summary["duplicates"] == 1
+        assert len(data["valid_buyers"]) == 1
+        assert data["valid_buyers"][0]["company_name"] == "Valid Sound Buyer"
+        assert len(data["excluded_buyers"]) == 3
+

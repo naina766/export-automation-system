@@ -23,13 +23,16 @@ import {
   X,
   AlertTriangle,
   CheckSquare,
-  Square
+  Square,
+  Ban,
+  Copy
 } from 'lucide-react';
 import apiService from '../services/api';
 import { useProduct } from '../context/ProductContext';
 import StatusBadge from '../components/StatusBadge';
 import LoadingSpinner from '../components/LoadingSpinner';
 import Notification from '../components/Notification';
+import PipelineStepper from '../components/PipelineStepper';
 import { formatBusinessError } from '../services/errorHandler';
 
 const COUNTRIES = [
@@ -74,14 +77,30 @@ export const DiscoverBuyers = () => {
   const [viewMode, setViewMode] = useState('table'); // 'table' | 'cards'
   const [notification, setNotification] = useState({ type: '', message: '' });
 
-  // Filter tab: 'eligible' | 'all' | 'valid_email' | 'no_email' | 'qualified' | 'rejected'
-  const [activeFilter, setActiveFilter] = useState('eligible');
+  // Filter tab: 'valid_buyers' (DEFAULT) | 'excluded'
+  const [activeTab, setActiveTab] = useState('valid_buyers');
+  const [excludedSubFilter, setExcludedSubFilter] = useState('all'); // 'all' | 'missing' | 'invalid' | 'duplicate'
   const [selectedLeadIds, setSelectedLeadIds] = useState(new Set());
 
   // Error & Empty States: null | 'unconfigured' | 'failed' | 'no_results'
   const [emptyStateType, setEmptyStateType] = useState(null);
   const [isDemoWorkflow, setIsDemoWorkflow] = useState(false);
   const [loadingSample, setLoadingSample] = useState(false);
+
+  // Manual Edit Modal State
+  const [editingLead, setEditingLead] = useState(null);
+  const [editFormData, setEditFormData] = useState({
+    company_name: '',
+    contact_name: '',
+    email: '',
+    website: '',
+    country: '',
+    buyer_type: ''
+  });
+  const [savingLead, setSavingLead] = useState(false);
+
+  // Re-enrichment State
+  const [enrichingId, setEnrichingId] = useState(null);
 
   // Synchronize when selectedProduct updates
   useEffect(() => {
@@ -108,13 +127,40 @@ export const DiscoverBuyers = () => {
           setResults(res.leads);
         }
       } catch (e) {
-        // Ignore initial load error
+        // Handled silently
       }
     };
     loadSavedLeads();
   }, [selectedProduct?.id]);
 
-  // Execute Live Buyer Search
+  // Helper for non-empty strings
+  function strNotEmpty(val) {
+    return val && String(val).trim() !== '' && String(val).toLowerCase() !== 'none' && String(val).toLowerCase() !== 'null' && String(val).toLowerCase() !== 'undefined';
+  }
+
+  // Helper to check if a lead has a valid email and passed validation
+  const isValidBuyer = (lead) => {
+    const hasEmail = strNotEmpty(lead.email);
+    const isValidFormat = lead.email_status === 'valid' || lead.syntax_valid === true || lead.syntax_valid === 'True';
+    const isNotDup = !(lead.is_duplicate === true || lead.is_duplicate === 'True');
+    return hasEmail && isValidFormat && isNotDup;
+  };
+
+  // Helper to categorize excluded reasons
+  const getExcludedReason = (lead) => {
+    if (lead.is_duplicate === true || lead.is_duplicate === 'True') {
+      return 'Duplicate Lead';
+    }
+    if (!strNotEmpty(lead.email) || lead.email_status === 'missing') {
+      return 'Missing Email';
+    }
+    if (lead.email_status === 'invalid' || lead.syntax_valid === false || lead.syntax_valid === 'False') {
+      return 'Invalid Email Syntax';
+    }
+    return 'Excluded';
+  };
+
+  // Execute Live Buyer Search via Serper
   const handleSearch = async (e) => {
     if (e) e.preventDefault();
     if (searching) return;
@@ -126,7 +172,7 @@ export const DiscoverBuyers = () => {
       setSelectedLeadIds(new Set());
       setNotification({ type: '', message: '' });
       setSearchStep(1);
-      setSearchStage('Querying global search API...');
+      setSearchStage('1. Querying Serper.dev live Google Search index...');
 
       const payload = {
         product_id: selectedProduct?.id,
@@ -140,37 +186,25 @@ export const DiscoverBuyers = () => {
 
       const t1 = setTimeout(() => {
         setSearchStep(2);
-        setSearchStage('Analyzing B2B search results...');
-      }, 400);
+        setSearchStage('2. Extracting company & public contact details...');
+      }, 500);
 
       const t2 = setTimeout(() => {
         setSearchStep(3);
-        setSearchStage('Extracting public company details...');
-      }, 900);
+        setSearchStage('3. Validating email RFC syntax (Valid vs Invalid vs Missing)...');
+      }, 1200);
 
       const t3 = setTimeout(() => {
         setSearchStep(4);
-        setSearchStage('Validating email formats (RFC syntax)...');
-      }, 1500);
-
-      const t4 = setTimeout(() => {
-        setSearchStep(5);
-        setSearchStage('Deduplicating & checking historical outreach...');
-      }, 2100);
-
-      const t5 = setTimeout(() => {
-        setSearchStep(6);
-        setSearchStage('Preparing outreach candidates...');
-      }, 2700);
+        setSearchStage('4. Deduplicating prospects and filtering valid buyers...');
+      }, 1900);
 
       const res = await apiService.searchBuyers(payload);
       clearTimeout(t1);
       clearTimeout(t2);
       clearTimeout(t3);
-      clearTimeout(t4);
-      clearTimeout(t5);
 
-      setSearchStep(7);
+      setSearchStep(5);
       const discoveredBuyers = res.buyers || res.results || [];
       setResults(discoveredBuyers);
       
@@ -178,15 +212,16 @@ export const DiscoverBuyers = () => {
       if (count === 0) {
         setEmptyStateType('no_results');
       } else {
-        const eligibleCount = discoveredBuyers.filter(b => b.outreach_status === 'eligible').length;
+        const validCount = discoveredBuyers.filter(isValidBuyer).length;
         setNotification({
           type: 'success',
-          message: `Discovered ${count} international prospects (${eligibleCount} ready for qualification & outreach).`
+          message: `Discovered ${count} prospects: ${validCount} valid buyers extracted and ready for qualification.`
         });
-        // Auto-select eligible leads
+        
+        // Auto-select valid buyers
         const autoSelected = new Set(
           discoveredBuyers
-            .filter(b => b.outreach_status === 'eligible')
+            .filter(isValidBuyer)
             .map(b => b.lead_id || b.id)
         );
         setSelectedLeadIds(autoSelected);
@@ -225,6 +260,14 @@ export const DiscoverBuyers = () => {
         type: 'info',
         message: 'Sample Workflow active. These are demonstration buyer records to explore the qualification and review pipeline.'
       });
+
+      // Auto-select valid demo buyers
+      const autoSelected = new Set(
+        sampleBuyers
+          .filter(isValidBuyer)
+          .map(b => b.lead_id || b.id)
+      );
+      setSelectedLeadIds(autoSelected);
     } catch (err) {
       setNotification({
         type: 'error',
@@ -248,28 +291,33 @@ export const DiscoverBuyers = () => {
     });
   };
 
-  // Select all eligible leads in view
-  const toggleSelectAllEligible = () => {
-    const eligibleInView = filteredResults.filter(r => r.outreach_status === 'eligible').map(r => r.lead_id || r.id);
-    const allSelected = eligibleInView.every(id => selectedLeadIds.has(id));
+  // Select all valid leads in view
+  const toggleSelectAllValid = () => {
+    const validInView = validBuyers.map(r => r.lead_id || r.id);
+    const allSelected = validInView.length > 0 && validInView.every(id => selectedLeadIds.has(id));
 
     setSelectedLeadIds(prev => {
       const next = new Set(prev);
       if (allSelected) {
-        eligibleInView.forEach(id => next.delete(id));
+        validInView.forEach(id => next.delete(id));
       } else {
-        eligibleInView.forEach(id => next.add(id));
+        validInView.forEach(id => next.add(id));
       }
       return next;
     });
   };
 
-  // Proceed to campaign creation with selected eligible leads
+  // Proceed to AI Qualification
+  const handleProceedToQualification = () => {
+    navigate('/classify');
+  };
+
+  // Proceed to campaign creation with selected valid leads
   const handleCreateCampaign = () => {
     if (selectedLeadIds.size === 0) {
       setNotification({
         type: 'warning',
-        message: 'Please select at least one outreach-eligible buyer to create a campaign.'
+        message: 'Please select at least one valid buyer to proceed with outreach.'
       });
       return;
     }
@@ -290,37 +338,137 @@ export const DiscoverBuyers = () => {
     });
   };
 
-  // Computed summary metrics
+  // Re-Enrich Lead from website
+  const handleEnrichLead = async (lead) => {
+    const leadId = lead.lead_id || lead.id;
+    try {
+      setEnrichingId(leadId);
+      const res = await apiService.enrichLead({
+        company: lead.company_name || lead.company,
+        website: lead.website,
+        email: lead.email,
+        buyer_name: lead.contact_name
+      });
+      if (res.success && res.email) {
+        setNotification({
+          type: 'success',
+          message: `Public email extracted for ${lead.company_name || lead.company}: ${res.email}`
+        });
+        setResults(prev => prev.map(item => {
+          if ((item.lead_id || item.id) === leadId) {
+            return {
+              ...item,
+              email: res.email,
+              email_status: 'valid',
+              syntax_valid: true,
+              valid: true
+            };
+          }
+          return item;
+        }));
+      } else {
+        setNotification({
+          type: 'warning',
+          message: res.message || 'No email could be found on the public website. You can add it manually.'
+        });
+      }
+    } catch (err) {
+      setNotification({
+        type: 'error',
+        message: 'Website extraction failed or reached timeout.'
+      });
+    } finally {
+      setEnrichingId(null);
+    }
+  };
+
+  // Open Edit Modal
+  const handleOpenEdit = (lead) => {
+    setEditingLead(lead);
+    setEditFormData({
+      company_name: lead.company_name || lead.company || '',
+      contact_name: lead.contact_name || '',
+      email: lead.email || '',
+      website: lead.website || '',
+      country: lead.country || 'United States',
+      buyer_type: lead.buyer_type || 'Distributor'
+    });
+  };
+
+  // Save Edit Form
+  const handleSaveEdit = async (e) => {
+    e.preventDefault();
+    if (!editFormData.email || !editFormData.company_name) {
+      setNotification({ type: 'warning', message: 'Company name and a valid email are required.' });
+      return;
+    }
+
+    try {
+      setSavingLead(true);
+      const res = await apiService.updateLead({
+        original_company: editingLead?.company_name || editingLead?.company,
+        original_email: editingLead?.email,
+        company_name: editFormData.company_name,
+        contact_name: editFormData.contact_name,
+        email: editFormData.email,
+        website: editFormData.website,
+        country: editFormData.country,
+        buyer_type: editFormData.buyer_type
+      });
+
+      if (res.success) {
+        setNotification({ type: 'success', message: 'Buyer contact information updated successfully.' });
+        const updatedLead = res.lead;
+        setResults(prev => prev.map(item => {
+          if ((item.lead_id || item.id) === (editingLead.lead_id || editingLead.id)) {
+            return { ...item, ...updatedLead };
+          }
+          return item;
+        }));
+        setEditingLead(null);
+      }
+    } catch (err) {
+      setNotification({
+        type: 'error',
+        message: formatBusinessError(err, 'Failed to update buyer contact details.')
+      });
+    } finally {
+      setSavingLead(false);
+    }
+  };
+
+  // ==========================================
+  // METRICS & FILTERED DATASETS
+  // ==========================================
   const totalDiscovered = results.length;
-  const withEmailCount = results.filter(r => r.email && strNotEmpty(r.email)).length;
-  const validEmailCount = results.filter(r => r.email_status === 'valid' || r.syntax_valid === true).length;
-  const aiQualifiedCount = results.filter(r => r.qualification_status === 'qualified').length;
-  const outreachEligibleCount = results.filter(r => r.outreach_status === 'eligible').length;
-  const excludedCount = totalDiscovered - outreachEligibleCount;
+  const extractedCount = results.filter(r => strNotEmpty(r.company_name || r.company) && (strNotEmpty(r.website) || strNotEmpty(r.source_url) || strNotEmpty(r.snippet))).length || totalDiscovered;
+  
+  // Valid buyers: email exists, syntax is valid, not duplicate
+  const validBuyers = results.filter(isValidBuyer);
+  const validEmailCount = validBuyers.length;
 
-  function strNotEmpty(val) {
-    return val && String(val).trim() !== '' && String(val).toLowerCase() !== 'none' && String(val).toLowerCase() !== 'null';
-  }
+  // Excluded buyers breakdown
+  const missingEmailBuyers = results.filter(r => !strNotEmpty(r.email) || r.email_status === 'missing');
+  const missingEmailCount = missingEmailBuyers.length;
 
-  // Filtered results based on active tab
-  const filteredResults = results.filter(r => {
-    if (activeFilter === 'eligible') {
-      return r.outreach_status === 'eligible';
-    }
-    if (activeFilter === 'valid_email') {
-      return r.email_status === 'valid' || r.syntax_valid === true;
-    }
-    if (activeFilter === 'no_email') {
-      return !r.email || r.email_status === 'missing' || r.email_status === 'invalid';
-    }
-    if (activeFilter === 'qualified') {
-      return r.qualification_status === 'qualified';
-    }
-    if (activeFilter === 'rejected') {
-      return r.qualification_status === 'rejected' || r.qualification_status === 'needs_review';
-    }
-    return true; // 'all'
-  });
+  const invalidEmailBuyers = results.filter(r => strNotEmpty(r.email) && (r.email_status === 'invalid' || r.syntax_valid === false || r.syntax_valid === 'False'));
+  const invalidEmailCount = invalidEmailBuyers.length;
+
+  const duplicateBuyers = results.filter(r => r.is_duplicate === true || r.is_duplicate === 'True');
+  const duplicateCount = duplicateBuyers.length;
+
+  const excludedBuyers = results.filter(r => !isValidBuyer(r));
+  const excludedCount = excludedBuyers.length;
+
+  // Active dataset based on tabs
+  const displayedLeads = activeTab === 'valid_buyers' 
+    ? validBuyers 
+    : excludedBuyers.filter(lead => {
+        if (excludedSubFilter === 'missing') return !strNotEmpty(lead.email) || lead.email_status === 'missing';
+        if (excludedSubFilter === 'invalid') return strNotEmpty(lead.email) && (lead.email_status === 'invalid' || lead.syntax_valid === false || lead.syntax_valid === 'False');
+        if (excludedSubFilter === 'duplicate') return lead.is_duplicate === true || lead.is_duplicate === 'True';
+        return true;
+      });
 
   return (
     <div className="space-y-6">
@@ -328,6 +476,18 @@ export const DiscoverBuyers = () => {
         type={notification.type}
         message={notification.message}
         onClose={() => setNotification({ type: '', message: '' })}
+      />
+
+      {/* Official 6-Stage Pipeline Stepper */}
+      <PipelineStepper 
+        currentStage={1} 
+        stats={{ 
+          total_leads: totalDiscovered,
+          websites_processed: extractedCount,
+          valid_emails: validEmailCount,
+          qualified_buyers: validBuyers.filter(b => b.qualification_status === 'qualified').length,
+          successful_sends: 0
+        }} 
       />
 
       {/* Page Header */}
@@ -338,7 +498,7 @@ export const DiscoverBuyers = () => {
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="text-base sm:text-lg font-bold text-[#F8FAFC]">Discover International Buyers</h1>
+              <h1 className="text-base sm:text-lg font-bold text-[#F8FAFC]">Buyer Discovery & Extraction</h1>
               {isDemoWorkflow && (
                 <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
                   DEMO DATA
@@ -346,16 +506,16 @@ export const DiscoverBuyers = () => {
               )}
             </div>
             <p className="text-xs text-[#94A3B8] mt-0.5">
-              Live B2B lead discovery: Search $\rightarrow$ Email Syntax Check $\rightarrow$ AI Qualification $\rightarrow$ Outreach.
+              Live Search $\rightarrow$ Extraction $\rightarrow$ Validation $\rightarrow$ Only Valid Emails Enter Qualification
             </p>
           </div>
         </div>
 
         <div className="flex items-center gap-2.5 w-full md:w-auto z-10">
           <button
-            onClick={() => navigate('/classify')}
-            disabled={results.length === 0}
-            className="w-full md:w-auto px-4 py-2.5 rounded-xl bg-[#050816] hover:bg-slate-800 text-slate-200 border border-[#1E293B] text-xs font-semibold shadow transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+            onClick={handleProceedToQualification}
+            disabled={validEmailCount === 0}
+            className="w-full md:w-auto px-4 py-2.5 rounded-xl bg-[#050816] hover:bg-slate-800 text-slate-200 border border-[#1E293B] text-xs font-semibold shadow transition-all flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
           >
             <Sparkles className="w-3.5 h-3.5 text-purple-400" />
             <span>AI Qualification</span>
@@ -364,7 +524,7 @@ export const DiscoverBuyers = () => {
           <button
             onClick={handleCreateCampaign}
             disabled={selectedLeadIds.size === 0}
-            className="w-full md:w-auto px-5 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold shadow-lg shadow-purple-600/20 transition-all flex items-center justify-center gap-2 disabled:opacity-50 active:scale-95"
+            className="w-full md:w-auto px-5 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold shadow-lg shadow-purple-600/20 transition-all flex items-center justify-center gap-2 disabled:opacity-50 active:scale-95 cursor-pointer"
           >
             <Send className="w-3.5 h-3.5" />
             <span>Create Campaign ({selectedLeadIds.size})</span>
@@ -379,7 +539,7 @@ export const DiscoverBuyers = () => {
           <div className="flex items-center gap-2.5">
             <AlertTriangle className="w-5 h-5 text-amber-400 flex-shrink-0" />
             <div className="text-xs">
-              <span className="font-bold text-amber-300">DEMO DATA WORKFLOW:</span> These are sample buyer records for testing the qualification interface. Live outreach cannot be sent to demonstration records.
+              <span className="font-bold text-amber-300">DEMO DATA WORKFLOW:</span> Demonstration records for testing the validation and AI classification pipeline. Live emails cannot be sent to demo buyers.
             </div>
           </div>
           <button
@@ -389,7 +549,7 @@ export const DiscoverBuyers = () => {
               setResults([]);
               setSelectedLeadIds(new Set());
             }}
-            className="px-3 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 text-xs font-semibold border border-amber-500/30 shrink-0"
+            className="px-3 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 text-xs font-semibold border border-amber-500/30 shrink-0 cursor-pointer"
           >
             Exit Sample Workflow
           </button>
@@ -401,9 +561,9 @@ export const DiscoverBuyers = () => {
         <div className="flex items-center justify-between border-b border-[#1E293B] pb-3">
           <div className="flex items-center gap-2">
             <Filter className="w-4 h-4 text-purple-400" />
-            <h2 className="text-xs font-bold text-white uppercase tracking-wider">Search Parameters</h2>
+            <h2 className="text-xs font-bold text-white uppercase tracking-wider">Discovery Parameters</h2>
           </div>
-          <span className="text-[11px] text-[#94A3B8]">Targeting Product: <b className="text-[#F8FAFC]">{product}</b></span>
+          <span className="text-[11px] text-[#94A3B8]">Targeting: <b className="text-[#F8FAFC]">{product}</b></span>
         </div>
 
         <form onSubmit={handleSearch} className="space-y-4 text-xs">
@@ -445,26 +605,26 @@ export const DiscoverBuyers = () => {
           </div>
 
           <div>
-            <label className="block font-semibold text-slate-300 mb-1">Keywords</label>
+            <label className="block font-semibold text-slate-300 mb-1">Search Keywords</label>
             <input
               ref={searchInputRef}
               type="text"
               value={keywords}
               onChange={(e) => setKeywords(e.target.value)}
-              placeholder="e.g. wholesale importer, sound healing, distributor"
+              placeholder="e.g. sound healing bowl importer, singing bowl distributor, wellness wholesale"
               className="w-full px-3.5 py-2.5 rounded-xl bg-[#050816] border border-[#1E293B] text-white focus:outline-none focus:border-purple-500 font-sans"
             />
           </div>
 
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
             <span className="text-[11px] text-[#94A3B8]">
-              * Discovers active commercial buyers and extracts verified public business contact points.
+              * Live Serper search extracts genuine contact details. Missing or invalid emails are filtered before qualification.
             </span>
             <div className="flex items-center gap-2">
               <button
                 type="submit"
                 disabled={searching || loadingSample}
-                className="w-full sm:w-auto px-6 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold shadow-md transition-all flex items-center justify-center gap-2 disabled:opacity-50 active:scale-95"
+                className="w-full sm:w-auto px-6 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold shadow-md transition-all flex items-center justify-center gap-2 disabled:opacity-50 active:scale-95 cursor-pointer"
               >
                 <Search className="w-4 h-4" />
                 <span>{searching ? 'Discovering Buyers...' : 'Discover Buyers'}</span>
@@ -474,11 +634,11 @@ export const DiscoverBuyers = () => {
         </form>
       </div>
 
-      {/* Outreach Pipeline Summary Bar */}
+      {/* Official 6-Metric Display Summary */}
       <div className="bg-[#0B1220] border border-[#1E293B] rounded-2xl p-4 shadow-xl">
         <div className="text-[11px] font-bold text-slate-300 uppercase tracking-wider mb-3 flex items-center justify-between">
-          <span>Outreach Eligibility Funnel</span>
-          <span className="text-slate-400 font-normal">Strict Pipeline: Only valid & qualified buyers reach outreach</span>
+          <span>Discovery & Extraction Summary</span>
+          <span className="text-slate-400 font-normal">Valid email is a hard gate for AI qualification</span>
         </div>
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
           <div className="p-3 rounded-xl bg-[#050816] border border-[#1E293B]">
@@ -486,109 +646,137 @@ export const DiscoverBuyers = () => {
             <div className="text-xl font-bold text-white mt-0.5">{totalDiscovered}</div>
           </div>
           <div className="p-3 rounded-xl bg-[#050816] border border-[#1E293B]">
-            <div className="text-[11px] text-[#94A3B8]">With Email</div>
-            <div className="text-xl font-bold text-cyan-400 mt-0.5">{withEmailCount}</div>
+            <div className="text-[11px] text-[#94A3B8]">Extracted</div>
+            <div className="text-xl font-bold text-indigo-400 mt-0.5">{extractedCount}</div>
           </div>
-          <div className="p-3 rounded-xl bg-[#050816] border border-[#1E293B]">
-            <div className="text-[11px] text-[#94A3B8]">Syntax Valid</div>
-            <div className="text-xl font-bold text-emerald-400 mt-0.5">{validEmailCount}</div>
+          <div className="p-3 rounded-xl bg-[#050816] border border-emerald-500/40 bg-emerald-950/15">
+            <div className="text-[11px] text-emerald-400 font-bold">Valid Emails</div>
+            <div className="text-xl font-bold text-emerald-300 mt-0.5">{validEmailCount}</div>
           </div>
-          <div className="p-3 rounded-xl bg-[#050816] border border-[#1E293B]">
-            <div className="text-[11px] text-[#94A3B8]">AI Qualified</div>
-            <div className="text-xl font-bold text-purple-400 mt-0.5">{aiQualifiedCount}</div>
-          </div>
-          <div className="p-3 rounded-xl bg-[#050816] border border-emerald-500/30 bg-emerald-950/10">
-            <div className="text-[11px] text-emerald-400 font-semibold">Outreach Eligible</div>
-            <div className="text-xl font-bold text-emerald-300 mt-0.5">{outreachEligibleCount}</div>
+          <div className="p-3 rounded-xl bg-[#050816] border border-amber-500/20 bg-amber-950/10">
+            <div className="text-[11px] text-amber-400 font-medium">Missing Emails</div>
+            <div className="text-xl font-bold text-amber-300 mt-0.5">{missingEmailCount}</div>
           </div>
           <div className="p-3 rounded-xl bg-[#050816] border border-rose-500/20 bg-rose-950/10">
-            <div className="text-[11px] text-rose-400">Excluded (No Mail/Fit)</div>
-            <div className="text-xl font-bold text-rose-300 mt-0.5">{excludedCount}</div>
+            <div className="text-[11px] text-rose-400 font-medium">Invalid Emails</div>
+            <div className="text-xl font-bold text-rose-300 mt-0.5">{invalidEmailCount}</div>
+          </div>
+          <div className="p-3 rounded-xl bg-[#050816] border border-purple-500/20 bg-purple-950/10">
+            <div className="text-[11px] text-purple-400 font-medium">Duplicates</div>
+            <div className="text-xl font-bold text-purple-300 mt-0.5">{duplicateCount}</div>
           </div>
         </div>
       </div>
 
       {/* Discovered Leads Section */}
       <div className="bg-[#0B1220] border border-[#1E293B] rounded-2xl p-5 shadow-xl space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          {/* Filter Tabs */}
-          <div className="flex flex-wrap items-center gap-1.5 bg-[#050816] p-1 rounded-xl border border-[#1E293B]">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#1E293B] pb-3">
+          {/* Primary View & Excluded Tabs */}
+          <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={() => setActiveFilter('eligible')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                activeFilter === 'eligible' 
-                  ? 'bg-emerald-600 text-white shadow' 
-                  : 'text-slate-400 hover:text-white'
+              onClick={() => setActiveTab('valid_buyers')}
+              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-2 ${
+                activeTab === 'valid_buyers' 
+                  ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/25 border border-emerald-400/40' 
+                  : 'bg-[#050816] text-slate-400 hover:text-white border border-[#1E293B]'
               }`}
             >
-              Outreach Eligible ({outreachEligibleCount})
+              <CheckCircle2 className="w-3.5 h-3.5" />
+              <span>Valid Buyers ({validEmailCount})</span>
             </button>
+
             <button
               type="button"
-              onClick={() => setActiveFilter('all')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                activeFilter === 'all' 
-                  ? 'bg-purple-600 text-white shadow' 
-                  : 'text-slate-400 hover:text-white'
+              onClick={() => setActiveTab('excluded')}
+              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-2 ${
+                activeTab === 'excluded' 
+                  ? 'bg-rose-600/90 text-white shadow-md shadow-rose-600/25 border border-rose-400/40' 
+                  : 'bg-[#050816] text-slate-400 hover:text-white border border-[#1E293B]'
               }`}
             >
-              All Discovered ({totalDiscovered})
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveFilter('valid_email')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                activeFilter === 'valid_email' 
-                  ? 'bg-slate-700 text-white' 
-                  : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              Syntax Valid ({validEmailCount})
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveFilter('no_email')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                activeFilter === 'no_email' 
-                  ? 'bg-slate-700 text-white' 
-                  : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              Missing / Invalid ({excludedCount})
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveFilter('qualified')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                activeFilter === 'qualified' 
-                  ? 'bg-slate-700 text-white' 
-                  : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              AI Qualified ({aiQualifiedCount})
+              <Ban className="w-3.5 h-3.5" />
+              <span>View Excluded ({excludedCount})</span>
             </button>
           </div>
 
           {/* View Mode Toggle */}
           <div className="flex items-center gap-2">
+            {activeTab === 'excluded' && (
+              <div className="flex items-center gap-1 bg-[#050816] p-1 rounded-lg border border-[#1E293B] text-[11px]">
+                <button
+                  type="button"
+                  onClick={() => setExcludedSubFilter('all')}
+                  className={`px-2 py-0.5 rounded font-semibold cursor-pointer ${excludedSubFilter === 'all' ? 'bg-slate-700 text-white' : 'text-slate-400'}`}
+                >
+                  All ({excludedCount})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setExcludedSubFilter('missing')}
+                  className={`px-2 py-0.5 rounded font-semibold cursor-pointer ${excludedSubFilter === 'missing' ? 'bg-slate-700 text-white' : 'text-slate-400'}`}
+                >
+                  Missing ({missingEmailCount})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setExcludedSubFilter('invalid')}
+                  className={`px-2 py-0.5 rounded font-semibold cursor-pointer ${excludedSubFilter === 'invalid' ? 'bg-slate-700 text-white' : 'text-slate-400'}`}
+                >
+                  Invalid ({invalidEmailCount})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setExcludedSubFilter('duplicate')}
+                  className={`px-2 py-0.5 rounded font-semibold cursor-pointer ${excludedSubFilter === 'duplicate' ? 'bg-slate-700 text-white' : 'text-slate-400'}`}
+                >
+                  Duplicates ({duplicateCount})
+                </button>
+              </div>
+            )}
+
             <div className="flex bg-[#050816] p-1 rounded-lg border border-[#1E293B]">
               <button
                 type="button"
                 onClick={() => setViewMode('table')}
-                className={`px-3 py-1 rounded text-xs font-semibold transition-all ${viewMode === 'table' ? 'bg-purple-600 text-white' : 'text-slate-400 hover:text-white'}`}
+                className={`px-3 py-1 rounded text-xs font-semibold transition-all cursor-pointer ${viewMode === 'table' ? 'bg-purple-600 text-white' : 'text-slate-400 hover:text-white'}`}
               >
                 Table View
               </button>
               <button
                 type="button"
                 onClick={() => setViewMode('cards')}
-                className={`px-3 py-1 rounded text-xs font-semibold transition-all ${viewMode === 'cards' ? 'bg-purple-600 text-white' : 'text-slate-400 hover:text-white'}`}
+                className={`px-3 py-1 rounded text-xs font-semibold transition-all cursor-pointer ${viewMode === 'cards' ? 'bg-purple-600 text-white' : 'text-slate-400 hover:text-white'}`}
               >
                 Card View
               </button>
             </div>
           </div>
+        </div>
+
+        {/* Primary Header Headline */}
+        <div className="flex items-center justify-between">
+          {activeTab === 'valid_buyers' ? (
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+              <h2 className="text-sm font-bold text-white">
+                {validEmailCount} Valid Buyers Found
+              </h2>
+              <span className="text-xs text-slate-400 hidden sm:inline">
+                · Verified email syntax · Ready for AI Qualification
+              </span>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-rose-400"></span>
+              <h2 className="text-sm font-bold text-rose-300">
+                {excludedCount} Excluded Prospects
+              </h2>
+              <span className="text-xs text-slate-400 hidden sm:inline">
+                · Missing email, invalid format, or duplicate records excluded from campaign eligibility
+              </span>
+            </div>
+          )}
         </div>
 
         {/* Real-time Progress Animation */}
@@ -598,27 +786,19 @@ export const DiscoverBuyers = () => {
             <div className="text-left space-y-2 text-xs font-medium pt-3 border-t border-[#1E293B]">
               <div className={`flex items-center gap-2 ${searchStep >= 1 ? 'text-emerald-400' : 'text-slate-500'}`}>
                 {searchStep >= 1 ? <CheckCircle2 className="w-4 h-4 flex-shrink-0" /> : <Clock className="w-4 h-4 flex-shrink-0" />}
-                <span>Querying global search API...</span>
+                <span>1. Querying live Serper Google Search API...</span>
               </div>
               <div className={`flex items-center gap-2 ${searchStep >= 2 ? 'text-emerald-400' : 'text-slate-500'}`}>
                 {searchStep >= 2 ? <CheckCircle2 className="w-4 h-4 flex-shrink-0" /> : <Clock className="w-4 h-4 flex-shrink-0" />}
-                <span>Analyzing B2B search results...</span>
+                <span>2. Extracting company & public contact details...</span>
               </div>
               <div className={`flex items-center gap-2 ${searchStep >= 3 ? 'text-emerald-400' : 'text-slate-500'}`}>
                 {searchStep >= 3 ? <CheckCircle2 className="w-4 h-4 flex-shrink-0" /> : <Clock className="w-4 h-4 flex-shrink-0" />}
-                <span>Extracting public company details...</span>
+                <span>3. Validating email RFC syntax (Valid vs Invalid vs Missing)...</span>
               </div>
               <div className={`flex items-center gap-2 ${searchStep >= 4 ? 'text-emerald-400' : 'text-slate-500'}`}>
                 {searchStep >= 4 ? <CheckCircle2 className="w-4 h-4 flex-shrink-0" /> : <Clock className="w-4 h-4 flex-shrink-0" />}
-                <span>Validating email formats (RFC syntax)...</span>
-              </div>
-              <div className={`flex items-center gap-2 ${searchStep >= 5 ? 'text-emerald-400' : 'text-slate-500'}`}>
-                {searchStep >= 5 ? <CheckCircle2 className="w-4 h-4 flex-shrink-0" /> : <Clock className="w-4 h-4 flex-shrink-0" />}
-                <span>Deduplicating & checking historical outreach...</span>
-              </div>
-              <div className={`flex items-center gap-2 ${searchStep >= 6 ? 'text-emerald-400' : 'text-slate-500'}`}>
-                {searchStep >= 6 ? <CheckCircle2 className="w-4 h-4 flex-shrink-0" /> : <Clock className="w-4 h-4 flex-shrink-0" />}
-                <span>Preparing outreach candidates...</span>
+                <span>4. Deduplicating and filtering valid email records...</span>
               </div>
             </div>
           </div>
@@ -638,7 +818,7 @@ export const DiscoverBuyers = () => {
               <button
                 type="button"
                 onClick={() => navigate('/settings')}
-                className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold shadow-md transition-all flex items-center justify-center gap-1.5"
+                className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold shadow-md transition-all flex items-center justify-center gap-1.5 cursor-pointer"
               >
                 <span>Go to Settings</span>
                 <ArrowRight className="w-3.5 h-3.5" />
@@ -647,7 +827,7 @@ export const DiscoverBuyers = () => {
                 type="button"
                 onClick={handleExploreSampleWorkflow}
                 disabled={loadingSample}
-                className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-[#0B1220] hover:bg-slate-800 text-slate-300 text-xs font-semibold border border-[#1E293B] transition-all flex items-center justify-center gap-1.5"
+                className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-[#0B1220] hover:bg-slate-800 text-slate-300 text-xs font-semibold border border-[#1E293B] transition-all flex items-center justify-center gap-1.5 cursor-pointer"
               >
                 <Sparkles className="w-3.5 h-3.5 text-amber-400" />
                 <span>Explore Sample Workflow</span>
@@ -661,7 +841,7 @@ export const DiscoverBuyers = () => {
               <AlertCircle className="w-6 h-6" />
             </div>
             <div>
-              <h3 className="text-base font-bold text-[#F8FAFC]">Unable to discover buyers right now.</h3>
+              <h3 className="text-base font-bold text-[#F8FAFC]">Buyer discovery failed.</h3>
               <p className="text-xs text-[#94A3B8] mt-1 leading-relaxed">
                 External search request failed or timed out. Please verify your connection or try again.
               </p>
@@ -671,7 +851,7 @@ export const DiscoverBuyers = () => {
                 type="button"
                 onClick={handleSearch}
                 disabled={searching}
-                className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold shadow-md transition-all flex items-center justify-center gap-1.5"
+                className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold shadow-md transition-all flex items-center justify-center gap-1.5 cursor-pointer"
               >
                 <RefreshCw className="w-3.5 h-3.5" />
                 <span>Try Again</span>
@@ -680,7 +860,7 @@ export const DiscoverBuyers = () => {
                 type="button"
                 onClick={handleExploreSampleWorkflow}
                 disabled={loadingSample}
-                className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-[#0B1220] hover:bg-slate-800 text-slate-300 text-xs font-semibold border border-[#1E293B] transition-all flex items-center justify-center gap-1.5"
+                className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-[#0B1220] hover:bg-slate-800 text-slate-300 text-xs font-semibold border border-[#1E293B] transition-all flex items-center justify-center gap-1.5 cursor-pointer"
               >
                 <Sparkles className="w-3.5 h-3.5 text-amber-400" />
                 <span>Explore Sample Workflow</span>
@@ -704,7 +884,7 @@ export const DiscoverBuyers = () => {
                 type="button"
                 onClick={handleSearch}
                 disabled={searching}
-                className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold shadow-md transition-all inline-flex items-center justify-center gap-2"
+                className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold shadow-md transition-all inline-flex items-center justify-center gap-2 cursor-pointer"
               >
                 <Search className="w-3.5 h-3.5" />
                 <span>Discover Buyers</span>
@@ -713,12 +893,21 @@ export const DiscoverBuyers = () => {
                 type="button"
                 onClick={handleExploreSampleWorkflow}
                 disabled={loadingSample}
-                className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-[#0B1220] hover:bg-slate-800 text-slate-300 text-xs font-semibold border border-[#1E293B] transition-all inline-flex items-center justify-center gap-1.5"
+                className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-[#0B1220] hover:bg-slate-800 text-slate-300 text-xs font-semibold border border-[#1E293B] transition-all inline-flex items-center justify-center gap-1.5 cursor-pointer"
               >
                 <Sparkles className="w-3.5 h-3.5 text-amber-400" />
                 <span>Explore Sample Workflow</span>
               </button>
             </div>
+          </div>
+        ) : displayedLeads.length === 0 ? (
+          /* Empty state for current tab */
+          <div className="p-8 rounded-xl bg-[#050816] border border-[#1E293B] text-center space-y-3">
+            <p className="text-xs text-slate-400">
+              {activeTab === 'valid_buyers' 
+                ? 'No valid email buyers found in the current search. Review excluded records or retry discovery.' 
+                : 'No excluded prospects in this category.'}
+            </p>
           </div>
         ) : viewMode === 'table' ? (
           /* Table View */
@@ -726,39 +915,44 @@ export const DiscoverBuyers = () => {
             <table className="w-full text-left text-xs font-sans">
               <thead className="bg-[#050816] text-slate-300 border-b border-[#1E293B] font-semibold uppercase tracking-wider text-[11px]">
                 <tr>
-                  <th className="p-3 w-8">
-                    <button
-                      type="button"
-                      onClick={toggleSelectAllEligible}
-                      title="Select all outreach-eligible in view"
-                      className="text-slate-400 hover:text-white"
-                    >
-                      <CheckSquare className="w-4 h-4" />
-                    </button>
-                  </th>
+                  {activeTab === 'valid_buyers' && (
+                    <th className="p-3 w-8">
+                      <button
+                        type="button"
+                        onClick={toggleSelectAllValid}
+                        title="Select all valid buyers"
+                        className="text-slate-400 hover:text-white cursor-pointer"
+                      >
+                        <CheckSquare className="w-4 h-4" />
+                      </button>
+                    </th>
+                  )}
                   <th className="p-3">Company & Contact</th>
                   <th className="p-3">Country</th>
                   <th className="p-3">Buyer Type</th>
+                  <th className="p-3">Website</th>
                   <th className="p-3">Email Address</th>
                   <th className="p-3">Email Status</th>
                   <th className="p-3">AI Qualification</th>
-                  <th className="p-3">Outreach Status</th>
+                  <th className="p-3">Pipeline Status</th>
+                  <th className="p-3 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#1E293B]">
-                {filteredResults.map((lead) => {
+                {displayedLeads.map((lead) => {
                   const id = lead.lead_id || lead.id;
-                  const isEligible = lead.outreach_status === 'eligible';
+                  const isValid = isValidBuyer(lead);
                   const isSelected = selectedLeadIds.has(id);
                   const contactDisplay = lead.contact_name || 'Company Team';
+                  const excludedReason = getExcludedReason(lead);
 
                   return (
                     <tr 
                       key={id} 
-                      className={`hover:bg-[#050816]/60 transition-colors ${isSelected ? 'bg-purple-950/20' : ''}`}
+                      className={`hover:bg-[#050816]/60 transition-colors ${isSelected && isValid ? 'bg-purple-950/20' : ''}`}
                     >
-                      <td className="p-3">
-                        {isEligible ? (
+                      {activeTab === 'valid_buyers' && (
+                        <td className="p-3">
                           <button
                             type="button"
                             onClick={() => toggleSelectLead(id)}
@@ -770,12 +964,8 @@ export const DiscoverBuyers = () => {
                               <Square className="w-4 h-4 text-slate-600" />
                             )}
                           </button>
-                        ) : (
-                          <span title="Not eligible for email campaign" className="text-slate-700 cursor-not-allowed">
-                            <Square className="w-4 h-4" />
-                          </span>
-                        )}
-                      </td>
+                        </td>
+                      )}
 
                       <td className="p-3 font-semibold text-white">
                         <div className="flex items-center gap-2">
@@ -803,28 +993,42 @@ export const DiscoverBuyers = () => {
                         </span>
                       </td>
 
+                      <td className="p-3 text-slate-400">
+                        {lead.website ? (
+                          <a 
+                            href={lead.website.startsWith('http') ? lead.website : `https://${lead.website}`}
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            className="text-cyan-400 hover:text-cyan-300 underline text-[11px] flex items-center gap-1"
+                          >
+                            <span>{lead.website.replace(/^https?:\/\//, '').slice(0, 20)}</span>
+                            <ExternalLink className="w-3 h-3 flex-shrink-0" />
+                          </a>
+                        ) : (
+                          <span className="text-slate-600">—</span>
+                        )}
+                      </td>
+
                       <td className="p-3 font-mono text-[11px]">
                         {lead.email ? (
-                          <code className="text-emerald-300 bg-emerald-950/40 px-2 py-0.5 rounded border border-emerald-900/50">
+                          <code className={`px-2 py-0.5 rounded border ${isValid ? 'text-emerald-300 bg-emerald-950/40 border-emerald-900/50' : 'text-rose-300 bg-rose-950/40 border-rose-900/50'}`}>
                             {lead.email}
                           </code>
                         ) : (
-                          <span className="text-slate-500 italic">Missing</span>
+                          <span className="text-amber-400/80 italic font-sans text-xs">Missing Email</span>
                         )}
                       </td>
 
                       <td className="p-3">
-                        {lead.email_status === 'valid' || lead.syntax_valid === true ? (
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                            Syntax Valid
-                          </span>
-                        ) : lead.email_status === 'invalid' ? (
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-500/10 text-rose-400 border border-rose-500/20">
-                            Invalid Syntax
+                        {isValid ? (
+                          <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 inline-flex items-center gap-1">
+                            <CheckCircle2 className="w-3 h-3" />
+                            <span>Valid Email</span>
                           </span>
                         ) : (
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-800 text-slate-400 border border-slate-700">
-                            Missing
+                          <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-rose-500/15 text-rose-400 border border-rose-500/30 inline-flex items-center gap-1">
+                            <Ban className="w-3 h-3" />
+                            <span>{excludedReason}</span>
                           </span>
                         )}
                       </td>
@@ -836,7 +1040,7 @@ export const DiscoverBuyers = () => {
                           </span>
                         ) : lead.qualification_status === 'rejected' ? (
                           <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-500/20 text-rose-300 border border-rose-500/30">
-                            Rejected
+                            Not Qualified
                           </span>
                         ) : (
                           <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
@@ -846,16 +1050,39 @@ export const DiscoverBuyers = () => {
                       </td>
 
                       <td className="p-3">
-                        {isEligible ? (
-                          <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 inline-flex items-center gap-1">
-                            <CheckCircle2 className="w-3 h-3" />
-                            <span>OUTREACH ELIGIBLE</span>
+                        {isValid ? (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-300 border border-emerald-500/20">
+                            Validation Passed
                           </span>
                         ) : (
-                          <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-800 text-slate-400 border border-slate-700">
-                            Not Eligible
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-800 text-slate-400 border border-slate-700">
+                            Excluded
                           </span>
                         )}
+                      </td>
+
+                      <td className="p-3 text-right">
+                        <div className="flex items-center justify-end gap-1.5">
+                          {!isValid && lead.website && (
+                            <button
+                              type="button"
+                              onClick={() => handleEnrichLead(lead)}
+                              disabled={enrichingId === id}
+                              title="Re-attempt website contact extraction"
+                              className="p-1.5 rounded-lg bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 cursor-pointer"
+                            >
+                              <RefreshCw className={`w-3 h-3 ${enrichingId === id ? 'animate-spin' : ''}`} />
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => handleOpenEdit(lead)}
+                            title="Edit contact details manually"
+                            className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 cursor-pointer"
+                          >
+                            <Edit3 className="w-3 h-3" />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -866,28 +1093,29 @@ export const DiscoverBuyers = () => {
         ) : (
           /* Card View */
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {filteredResults.map((lead) => {
+            {displayedLeads.map((lead) => {
               const id = lead.lead_id || lead.id;
-              const isEligible = lead.outreach_status === 'eligible';
+              const isValid = isValidBuyer(lead);
               const isSelected = selectedLeadIds.has(id);
               const contactDisplay = lead.contact_name || 'Company Team';
+              const excludedReason = getExcludedReason(lead);
 
               return (
                 <div 
                   key={id} 
                   className={`p-4 rounded-xl bg-[#050816] border space-y-3 shadow-sm transition-all ${
-                    isSelected 
-                      ? 'border-purple-500 bg-purple-950/10' 
+                    isSelected && isValid 
+                      ? 'border-purple-500 bg-purple-950/15 shadow-md shadow-purple-500/10' 
                       : 'border-[#1E293B] hover:border-purple-500/40'
                   }`}
                 >
                   <div className="flex justify-between items-start gap-2">
                     <div className="flex items-start gap-2">
-                      {isEligible && (
+                      {isValid && (
                         <button
                           type="button"
                           onClick={() => toggleSelectLead(id)}
-                          className="text-purple-400 hover:text-purple-300 mt-0.5"
+                          className="text-purple-400 hover:text-purple-300 mt-0.5 cursor-pointer"
                         >
                           {isSelected ? (
                             <CheckSquare className="w-4 h-4 text-purple-400" />
@@ -901,66 +1129,92 @@ export const DiscoverBuyers = () => {
                           <Building2 className="w-3.5 h-3.5 text-purple-400 flex-shrink-0" />
                           <span>{lead.company_name || lead.company}</span>
                         </h3>
-                        <p className="text-xs text-slate-400 mt-0.5">{contactDisplay}</p>
+                        <p className="text-xs text-slate-400 mt-0.5 pl-5">
+                          {contactDisplay}
+                        </p>
                       </div>
                     </div>
-                    {lead.is_demo ? (
-                      <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">
-                        DEMO
-                      </span>
-                    ) : (
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30">
-                        {lead.buyer_type}
-                      </span>
-                    )}
-                  </div>
 
-                  <div className="text-xs space-y-1.5 text-slate-300">
-                    <div className="flex items-center gap-1.5">
-                      <MapPin className="w-3.5 h-3.5 text-rose-400" />
-                      <span>{lead.country}</span>
-                    </div>
-                    {lead.website && (
-                      <div className="flex items-center gap-1.5 font-mono text-[11px]">
-                        <Globe className="w-3.5 h-3.5 text-slate-400" />
-                        <a 
-                          href={lead.website} 
-                          target="_blank" 
-                          rel="noopener noreferrer"
-                          className="text-cyan-400 hover:text-cyan-300 truncate"
-                        >
-                          {lead.website.replace(/^https?:\/\//, '')}
-                        </a>
-                      </div>
-                    )}
-                    <div className="flex items-center gap-1.5 font-mono text-[11px]">
-                      <Mail className="w-3.5 h-3.5 text-slate-400" />
-                      {lead.email ? (
-                        <span className="text-emerald-300 truncate font-semibold">{lead.email}</span>
+                    <div className="flex items-center gap-1">
+                      {isValid ? (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                          Valid Email
+                        </span>
                       ) : (
-                        <span className="text-slate-500 italic">Email Missing</span>
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-500/15 text-rose-400 border border-rose-500/30">
+                          {excludedReason}
+                        </span>
                       )}
                     </div>
                   </div>
 
-                  {/* Status Badges Row */}
-                  <div className="pt-2 border-t border-[#1E293B] flex flex-wrap items-center justify-between gap-1.5 text-[11px]">
-                    {isEligible ? (
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 inline-flex items-center gap-1">
-                        <CheckCircle2 className="w-3 h-3" />
-                        <span>ELIGIBLE</span>
+                  <div className="grid grid-cols-2 gap-2 text-xs pt-1 border-t border-[#1E293B]">
+                    <div>
+                      <span className="text-[10px] text-[#94A3B8] block">Market / Country</span>
+                      <span className="text-slate-200 font-medium flex items-center gap-1 mt-0.5">
+                        <MapPin className="w-3 h-3 text-rose-400" />
+                        <span>{lead.country || 'International'}</span>
                       </span>
-                    ) : (
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-800 text-slate-400 border border-slate-700">
-                        Not Eligible
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-[#94A3B8] block">Buyer Category</span>
+                      <span className="text-purple-300 font-medium mt-0.5 block truncate">
+                        {lead.buyer_type || 'Distributor'}
                       </span>
-                    )}
+                    </div>
+                  </div>
 
-                    {lead.qualification_status === 'qualified' && (
-                      <span className="text-[10px] text-purple-300 font-bold">
-                        Score: {lead.ai_score ?? 85}/100
-                      </span>
+                  <div className="space-y-1.5 text-xs bg-[#080D1D] p-2.5 rounded-lg border border-[#1E293B]">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] text-slate-400">Email:</span>
+                      {lead.email ? (
+                        <code className="text-emerald-300 font-mono text-[11px] truncate max-w-[170px]">
+                          {lead.email}
+                        </code>
+                      ) : (
+                        <span className="text-amber-400/80 italic text-[11px]">Missing</span>
+                      )}
+                    </div>
+
+                    {lead.website && (
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] text-slate-400">Website:</span>
+                        <a 
+                          href={lead.website.startsWith('http') ? lead.website : `https://${lead.website}`}
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          className="text-cyan-400 hover:text-cyan-300 underline text-[11px] flex items-center gap-1 truncate max-w-[170px]"
+                        >
+                          <span className="truncate">{lead.website.replace(/^https?:\/\//, '')}</span>
+                          <ExternalLink className="w-3 h-3 flex-shrink-0" />
+                        </a>
+                      </div>
                     )}
+                  </div>
+
+                  <div className="flex items-center justify-between pt-1 text-xs">
+                    <div className="text-[11px] text-slate-400">
+                      Score: <b className="text-purple-300">{lead.ai_score ?? '—'}</b>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      {!isValid && lead.website && (
+                        <button
+                          type="button"
+                          onClick={() => handleEnrichLead(lead)}
+                          disabled={enrichingId === id}
+                          className="px-2 py-1 rounded bg-indigo-600/20 text-indigo-300 border border-indigo-500/30 text-[11px] font-semibold cursor-pointer"
+                        >
+                          Extract
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => handleOpenEdit(lead)}
+                        className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 text-[11px] font-semibold cursor-pointer"
+                      >
+                        Edit
+                      </button>
+                    </div>
                   </div>
                 </div>
               );
@@ -969,21 +1223,108 @@ export const DiscoverBuyers = () => {
         )}
       </div>
 
-      {/* Sticky Bottom Action Bar when Leads are selected */}
-      {selectedLeadIds.size > 0 && (
-        <div className="sticky bottom-4 z-20 p-4 rounded-2xl bg-[#0B1220]/95 backdrop-blur border border-purple-500/40 shadow-2xl flex items-center justify-between gap-4">
-          <div className="flex items-center gap-2 text-xs text-white">
-            <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-            <span><b>{selectedLeadIds.size}</b> outreach-eligible buyer{selectedLeadIds.size > 1 ? 's' : ''} selected</span>
+      {/* Manual Contact Edit Modal */}
+      {editingLead && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-[#0B1220] border border-[#1E293B] rounded-2xl p-6 max-w-lg w-full space-y-4 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-[#1E293B] pb-3">
+              <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                <Edit3 className="w-4 h-4 text-purple-400" />
+                <span>Edit Buyer Contact Details</span>
+              </h3>
+              <button 
+                onClick={() => setEditingLead(null)}
+                className="text-slate-400 hover:text-white p-1 rounded cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveEdit} className="space-y-3 text-xs">
+              <div>
+                <label className="block font-semibold text-slate-300 mb-1">Company Name *</label>
+                <input
+                  type="text"
+                  required
+                  value={editFormData.company_name}
+                  onChange={(e) => setEditFormData({ ...editFormData, company_name: e.target.value })}
+                  className="w-full px-3 py-2 rounded-xl bg-[#050816] border border-[#1E293B] text-white focus:outline-none focus:border-purple-500"
+                />
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-300 mb-1">Contact Name (Leave empty if unknown)</label>
+                <input
+                  type="text"
+                  placeholder="Optional (defaults to 'Company Team')"
+                  value={editFormData.contact_name}
+                  onChange={(e) => setEditFormData({ ...editFormData, contact_name: e.target.value })}
+                  className="w-full px-3 py-2 rounded-xl bg-[#050816] border border-[#1E293B] text-white focus:outline-none focus:border-purple-500"
+                />
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-300 mb-1">Email Address *</label>
+                <input
+                  type="email"
+                  required
+                  placeholder="e.g. procurement@company.com"
+                  value={editFormData.email}
+                  onChange={(e) => setEditFormData({ ...editFormData, email: e.target.value })}
+                  className="w-full px-3 py-2 rounded-xl bg-[#050816] border border-[#1E293B] text-white focus:outline-none focus:border-purple-500 font-mono"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-semibold text-slate-300 mb-1">Country</label>
+                  <input
+                    type="text"
+                    value={editFormData.country}
+                    onChange={(e) => setEditFormData({ ...editFormData, country: e.target.value })}
+                    className="w-full px-3 py-2 rounded-xl bg-[#050816] border border-[#1E293B] text-white focus:outline-none focus:border-purple-500"
+                  />
+                </div>
+                <div>
+                  <label className="block font-semibold text-slate-300 mb-1">Buyer Category</label>
+                  <input
+                    type="text"
+                    value={editFormData.buyer_type}
+                    onChange={(e) => setEditFormData({ ...editFormData, buyer_type: e.target.value })}
+                    className="w-full px-3 py-2 rounded-xl bg-[#050816] border border-[#1E293B] text-white focus:outline-none focus:border-purple-500"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-300 mb-1">Website URL</label>
+                <input
+                  type="text"
+                  placeholder="https://www.example.com"
+                  value={editFormData.website}
+                  onChange={(e) => setEditFormData({ ...editFormData, website: e.target.value })}
+                  className="w-full px-3 py-2 rounded-xl bg-[#050816] border border-[#1E293B] text-white focus:outline-none focus:border-purple-500"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-[#1E293B]">
+                <button
+                  type="button"
+                  onClick={() => setEditingLead(null)}
+                  className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingLead}
+                  className="px-5 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold cursor-pointer disabled:opacity-50"
+                >
+                  {savingLead ? 'Saving...' : 'Save & Validate'}
+                </button>
+              </div>
+            </form>
           </div>
-          <button
-            onClick={handleCreateCampaign}
-            className="px-6 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold shadow-lg shadow-purple-600/30 transition-all flex items-center gap-2 active:scale-95"
-          >
-            <Send className="w-4 h-4" />
-            <span>Create Campaign ({selectedLeadIds.size})</span>
-            <ArrowRight className="w-4 h-4" />
-          </button>
         </div>
       )}
     </div>

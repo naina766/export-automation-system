@@ -671,11 +671,21 @@ async def discover_buyers_endpoint(payload: SearchRequest):
 
     # Compute pipeline summary metrics
     total_found = len(leads)
-    with_email_count = len([l for l in leads if l.get("email")])
-    valid_email_count = len([l for l in leads if l.get("email_status") == "valid"])
+    extracted_count = len([l for l in leads if l.get("company_name") or l.get("company")])
+    valid_email_leads = [
+        l for l in leads 
+        if l.get("email") and 
+        (l.get("email_status") == "valid" or str(l.get("syntax_valid", "")).lower() == "true" or l.get("syntax_valid") is True) and 
+        not (l.get("is_duplicate") is True or str(l.get("is_duplicate", "")).lower() == "true")
+    ]
+    valid_email_count = len(valid_email_leads)
+    missing_email_count = len([l for l in leads if not l.get("email") or l.get("email_status") == "missing"])
+    invalid_email_count = len([l for l in leads if l.get("email") and (l.get("email_status") == "invalid" or str(l.get("syntax_valid", "")).lower() == "false" or l.get("syntax_valid") is False)])
+    duplicate_count = len([l for l in leads if l.get("is_duplicate") is True or str(l.get("is_duplicate", "")).lower() == "true"])
     ai_qualified_count = len([l for l in leads if l.get("qualification_status") == "qualified"])
     outreach_eligible_count = len([l for l in leads if l.get("outreach_status") == "eligible"])
-    excluded_count = total_found - outreach_eligible_count
+    excluded_leads = [l for l in leads if l not in valid_email_leads]
+    excluded_count = len(excluded_leads)
 
     query_str = provider.build_search_query(
         product=product_name,
@@ -698,12 +708,18 @@ async def discover_buyers_endpoint(payload: SearchRequest):
         "count": total_found,
         "pipeline_summary": {
             "total_discovered": total_found,
-            "with_email": with_email_count,
-            "valid_email": valid_email_count,
+            "extracted": extracted_count,
+            "valid_emails": valid_email_count,
+            "missing_emails": missing_email_count,
+            "invalid_emails": invalid_email_count,
+            "duplicates": duplicate_count,
+            "with_email": total_found - missing_email_count,
             "ai_qualified": ai_qualified_count,
             "outreach_eligible": outreach_eligible_count,
             "excluded": excluded_count
         },
+        "valid_buyers": valid_email_leads,
+        "excluded_buyers": excluded_leads,
         "buyers": leads,
         "results": leads
     }
