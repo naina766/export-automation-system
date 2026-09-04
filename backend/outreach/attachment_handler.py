@@ -12,6 +12,28 @@ class AttachmentHandler:
     """Handles attachment validation and MIME packaging."""
 
     @staticmethod
+    def get_attachment_path(file_path: Optional[str] = None) -> Optional[Path]:
+        """Resolves relative or absolute catalog PDF path."""
+        if not file_path:
+            return COMPANY_PRESENTATION_PDF if COMPANY_PRESENTATION_PDF.exists() else None
+        
+        p = Path(file_path)
+        if p.is_absolute() and p.exists():
+            return p
+        
+        # Check relative to backend or project root
+        proj_root = Path(__file__).resolve().parent.parent.parent
+        resolved = proj_root / file_path
+        if resolved.exists():
+            return resolved
+        
+        backend_resolved = Path(__file__).resolve().parent.parent / file_path
+        if backend_resolved.exists():
+            return backend_resolved
+            
+        return COMPANY_PRESENTATION_PDF if COMPANY_PRESENTATION_PDF.exists() else None
+
+    @staticmethod
     def get_presentation_status() -> Tuple[bool, str, int]:
         """
         Check if company presentation PDF is available and valid.
@@ -21,6 +43,7 @@ class AttachmentHandler:
             size = COMPANY_PRESENTATION_PDF.stat().st_size
             return True, COMPANY_PRESENTATION_PDF.name, size
         return False, "company_presentation.pdf (Missing)", 0
+
 
     @classmethod
     def get_mime_attachment(cls, file_path: Optional[Path] = None) -> Optional[MIMEBase]:

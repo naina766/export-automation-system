@@ -127,13 +127,14 @@ class EmailSender:
         {{company_name}}, {{contact_name}}, {{buyer_name}}, {{country}}, {{buyer_type}}, {{product_name}}, {{product}}
         If contact_name is null/empty -> uses 'Company Team' (never 'undefined', 'null', 'Procurement Lead').
         """
+        clean_company = str(company_name).strip() if company_name and str(company_name).strip() not in ["", "None", "null"] else ""
         raw_contact = contact_name or buyer_name
         if raw_contact and str(raw_contact).strip() not in ["", "None", "null", "undefined", "Procurement Lead", "Purchasing Manager"]:
             clean_name = str(raw_contact).strip()
         else:
-            clean_name = "Company Team"
+            clean_name = f"{clean_company} Team" if clean_company else "Company Team"
 
-        clean_company = str(company_name).strip() if company_name and str(company_name).strip() not in ["", "None", "null"] else "your organization"
+        clean_company_display = clean_company if clean_company else "your organization"
         clean_country = str(country).strip() if country and str(country).strip() not in ["", "None", "null"] else "your region"
         clean_type = str(buyer_type).strip() if buyer_type and str(buyer_type).strip() not in ["", "None", "null"] else "partner"
         clean_product = str(product).strip() if product and str(product).strip() not in ["", "None", "null"] else "Himalayan Sound Healing Bowls"
@@ -141,7 +142,8 @@ class EmailSender:
         text = template
         text = text.replace("{{contact_name}}", clean_name)
         text = text.replace("{{buyer_name}}", clean_name)
-        text = text.replace("{{company_name}}", clean_company)
+        text = text.replace("{{company_name}}", clean_company_display)
+
         text = text.replace("{{country}}", clean_country)
         text = text.replace("{{buyer_type}}", clean_type)
         text = text.replace("{{product_name}}", clean_product)
