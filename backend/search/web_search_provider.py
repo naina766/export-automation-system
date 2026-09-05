@@ -5,6 +5,7 @@ Provides real-time discovery of international B2B buyers without scraping or dem
 """
 import os
 import sys
+import re
 import asyncio
 from pathlib import Path
 import httpx
@@ -86,20 +87,19 @@ class WebBuyerSearchProvider(BuyerSearchProvider):
         buyer_type: Optional[str] = None,
         keywords: Optional[Union[str, List[str]]] = None
     ) -> str:
-        """Construct an optimized B2B query string."""
+        """Construct an optimized B2B query string compliant with search API free-tier patterns."""
         clean_product = (product or "Singing Bowls").strip()
-        # Keep product term clean without restrictive mandatory full-phrase quotes
         terms = [clean_product]
 
         # Buyer type intent
         if buyer_type and buyer_type.lower() not in ["all", "all buyer types", ""]:
-            terms.append(f'("{buyer_type}" OR wholesale OR distributor OR importer)')
+            terms.append(f"{buyer_type.strip()} wholesale importer")
         else:
-            terms.append('wholesale distributor importer')
+            terms.append("wholesale distributor importer")
 
         # Target country
         if country and country.lower() not in ["all", "all countries", ""]:
-            terms.append(f'"{country.strip()}"' if " " in country.strip() else country.strip())
+            terms.append(country.strip())
 
         # Keywords handling
         if keywords:
@@ -110,7 +110,11 @@ class WebBuyerSearchProvider(BuyerSearchProvider):
                 if kw_str:
                     terms.append(kw_str)
 
-        return " ".join(terms)
+        query_str = " ".join(terms)
+        # Strip parenthesis and quotes for Serper free-tier compatibility
+        query_str = re.sub(r"[()\"']", "", query_str)
+        query_str = re.sub(r"\s+", " ", query_str).strip()
+        return query_str
 
     async def search(
         self,
@@ -152,7 +156,6 @@ class WebBuyerSearchProvider(BuyerSearchProvider):
             async with httpx.AsyncClient(timeout=20.0) as client:
                 if self.provider == "serper":
                     raw_items = await self._search_serper(client, query, limit)
-                    # Resilient fallback if over-constrained query yielded 0 results
                     if not raw_items:
                         fallback_query = f"{product} wholesale distributor {country or ''}".strip()
                         raw_items = await self._search_serper(client, fallback_query, limit)
@@ -210,8 +213,15 @@ class WebBuyerSearchProvider(BuyerSearchProvider):
         """Query Serper.dev Google Search API (Fast, Developer-Friendly, 2,500 Free Queries)."""
         url = "https://google.serper.dev/search"
         headers = {"X-API-KEY": self.api_key, "Content-Type": "application/json"}
-        payload = {"q": query, "num": min(limit, 20)}
+        clean_q = re.sub(r"[()\"']", "", query).strip()
+        payload = {"q": clean_q, "num": min(limit, 20)}
         res = await client.post(url, headers=headers, json=payload)
+        
+        # If query pattern is restricted on free tier, fallback to simplified keywords
+        if res.status_code == 400:
+            simplified = " ".join([word for word in clean_q.split() if len(word) > 2][:6])
+            res = await client.post(url, headers=headers, json={"q": simplified, "num": min(limit, 20)})
+
         res.raise_for_status()
         data = res.json()
         items = data.get("organic", [])
@@ -223,6 +233,7 @@ class WebBuyerSearchProvider(BuyerSearchProvider):
             }
             for item in items
         ]
+
 
     async def _search_brave(self, client: httpx.AsyncClient, query: str, limit: int) -> List[Dict[str, Any]]:
         """Query Brave Search API (Independent Web Index with Free Tier)."""
