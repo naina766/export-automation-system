@@ -4,7 +4,7 @@ import { Menu, Package, ChevronDown, Check, PlusCircle, ArrowRight, Activity, Sp
 import { useProduct } from '../context/ProductContext';
 
 export const Navbar = ({ title, subtitle, systemStatus, onMenuClick }) => {
-  const { products, selectedProduct, setSelectedProduct } = useProduct();
+  const { products, selectedProduct, setSelectedProduct, isDemoMode } = useProduct();
   const [productDropdownOpen, setProductDropdownOpen] = useState(false);
   const [popoverOpen, setPopoverOpen] = useState(false);
   const productRef = useRef(null);
@@ -78,7 +78,28 @@ export const Navbar = ({ title, subtitle, systemStatus, onMenuClick }) => {
         </div>
       </div>
 
-      <div className="flex items-center gap-3 shrink-0">
+      <div className="flex items-center gap-2.5 shrink-0">
+        {/* Persistent Live vs Demo Workspace Indicator */}
+        {isDemoMode ? (
+          <div 
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-500/15 border border-amber-500/35 text-amber-300 text-[11px] font-bold shadow-sm"
+            title="Sample data workflow — no real outreach will be sent"
+          >
+            <span className="w-2 h-2 rounded-full bg-amber-400"></span>
+            <span className="hidden sm:inline">DEMO WORKSPACE</span>
+            <span className="sm:hidden">DEMO</span>
+          </div>
+        ) : (
+          <div 
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-cyan-500/10 border border-cyan-500/25 text-cyan-300 text-[11px] font-semibold"
+            title="Connected to live production search & email data"
+          >
+            <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse"></span>
+            <span className="hidden sm:inline">LIVE WORKSPACE</span>
+            <span className="sm:hidden">LIVE</span>
+          </div>
+        )}
+
         {/* Global Product Selector Dropdown */}
         <div className="relative" ref={productRef}>
           <button

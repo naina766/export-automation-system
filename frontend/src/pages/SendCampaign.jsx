@@ -48,9 +48,27 @@ export const SendCampaign = () => {
   const location = useLocation();
   const { selectedProduct, products } = useProduct();
 
+  const textareaRef = useRef(null);
   const [subject, setSubject] = useState(selectedProduct?.email_subject_template || DEFAULT_SUBJECT);
   const [body, setBody] = useState(selectedProduct?.email_body_template || DEFAULT_BODY);
   const [attachPdf, setAttachPdf] = useState(true);
+
+  const insertVariable = (tag) => {
+    const textarea = textareaRef.current;
+    if (!textarea) {
+      setBody(prev => prev + ` ${tag}`);
+      return;
+    }
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const currentVal = body || '';
+    const newVal = currentVal.substring(0, start) + tag + currentVal.substring(end);
+    setBody(newVal);
+    setTimeout(() => {
+      textarea.focus();
+      textarea.setSelectionRange(start + tag.length, start + tag.length);
+    }, 0);
+  };
 
   // Leads available for this campaign
   const [allLeads, setAllLeads] = useState([]);
@@ -459,18 +477,32 @@ export const SendCampaign = () => {
             <div>
               <label className="block text-xs font-semibold text-slate-300 mb-1">Body Template</label>
               <textarea
+                ref={textareaRef}
                 rows={9}
                 value={body}
                 onChange={(e) => setBody(e.target.value)}
                 className="w-full p-3.5 rounded-xl bg-[#050816] border border-[#1E293B] text-white text-xs focus:outline-none focus:border-purple-500 font-sans leading-relaxed resize-y"
               />
-              <div className="flex flex-wrap gap-1.5 mt-2 text-[10px] text-slate-400">
-                <span>Available tags:</span>
-                <code className="bg-[#050816] px-1.5 py-0.5 rounded text-purple-300 border border-[#1E293B]">{'{{product_name}}'}</code>
-                <code className="bg-[#050816] px-1.5 py-0.5 rounded text-purple-300 border border-[#1E293B]">{'{{company_name}}'}</code>
-                <code className="bg-[#050816] px-1.5 py-0.5 rounded text-purple-300 border border-[#1E293B]">{'{{contact_name}}'}</code>
-                <code className="bg-[#050816] px-1.5 py-0.5 rounded text-purple-300 border border-[#1E293B]">{'{{country}}'}</code>
-                <code className="bg-[#050816] px-1.5 py-0.5 rounded text-purple-300 border border-[#1E293B]">{'{{buyer_type}}'}</code>
+              <div className="flex flex-wrap items-center gap-1.5 mt-2 text-[11px] text-slate-400">
+                <span className="font-semibold text-slate-400">Insert tag:</span>
+                {[
+                  { label: 'Product', tag: '{{product_name}}' },
+                  { label: 'Company', tag: '{{company_name}}' },
+                  { label: 'Contact', tag: '{{contact_name}}' },
+                  { label: 'Country', tag: '{{country}}' },
+                  { label: 'Buyer Type', tag: '{{buyer_type}}' },
+                ].map(({ label, tag }) => (
+                  <button
+                    key={tag}
+                    type="button"
+                    onClick={() => insertVariable(tag)}
+                    className="px-2 py-0.5 rounded bg-[#050816] hover:bg-purple-950/40 text-purple-300 hover:text-purple-200 border border-[#1E293B] hover:border-purple-500/40 font-mono text-[10px] transition-all cursor-pointer flex items-center gap-1 active:scale-95"
+                    title={`Click to insert ${tag} into email body`}
+                  >
+                    <span>+</span>
+                    <span>{label}</span>
+                  </button>
+                ))}
               </div>
             </div>
 

@@ -273,13 +273,27 @@ export const Classification = () => {
                           </div>
                         </div>
                       </td>
-                      <td className="p-3 text-[#94A3B8] text-[11px] max-w-xs truncate">
-                        {lead.reason || (isBusiness ? 'Strong commercial match for export catalog' : 'Non-wholesale profile')}
+                      <td className="p-3 text-[11px] max-w-sm">
+                        <div className="space-y-1">
+                          <div className="text-slate-300 line-clamp-2" title={lead.reason || ''}>
+                            {lead.reason || (isBusiness ? 'Wholesale/distributor profile aligned with export catalog.' : 'Non-commercial / individual retail inquiry.')}
+                          </div>
+                          <div className="flex items-center gap-2 text-[10px] text-slate-400">
+                            <span className="flex items-center gap-1">
+                              <span className={isBusiness ? "text-emerald-400 font-bold" : "text-slate-500"}>✓</span>
+                              <span>{lead.buyer_type || lead.ai_category || 'Wholesale'}</span>
+                            </span>
+                            <span>•</span>
+                            <span className="text-purple-300 font-medium">
+                              {isBusiness ? 'Target Outreach' : 'Filtered Out'}
+                            </span>
+                          </div>
+                        </div>
                       </td>
                       <td className="p-3 text-right">
                         <StatusBadge 
                           status={isBusiness ? 'valid' : 'invalid'} 
-                          text={isBusiness ? 'Highly Qualified' : 'Low Relevance'} 
+                          text={isBusiness ? 'Qualified' : 'Unqualified'} 
                         />
                       </td>
                     </tr>

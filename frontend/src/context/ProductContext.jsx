@@ -7,6 +7,7 @@ export const ProductProvider = ({ children }) => {
   const [products, setProducts] = useState([]);
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [activeProduct, setActiveProduct] = useState(null);
+  const [isDemoMode, setIsDemoMode] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -109,6 +110,8 @@ export const ProductProvider = ({ children }) => {
         selectedProduct,
         setSelectedProduct,
         activeProduct,
+        isDemoMode,
+        setIsDemoMode,
         loading,
         error,
         refreshProducts,

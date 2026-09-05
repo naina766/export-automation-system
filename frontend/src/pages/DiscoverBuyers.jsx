@@ -61,7 +61,7 @@ const BUYER_TYPES = [
 
 export const DiscoverBuyers = () => {
   const navigate = useNavigate();
-  const { selectedProduct } = useProduct();
+  const { selectedProduct, isDemoMode, setIsDemoMode } = useProduct();
   const searchInputRef = useRef(null);
 
   const [product, setProduct] = useState(selectedProduct?.name || 'Himalayan Sound Healing Bowls');
@@ -169,6 +169,7 @@ export const DiscoverBuyers = () => {
       setSearching(true);
       setEmptyStateType(null);
       setIsDemoWorkflow(false);
+      setIsDemoMode(false);
       setSelectedLeadIds(new Set());
       setNotification({ type: '', message: '' });
       setSearchStep(1);
@@ -255,6 +256,7 @@ export const DiscoverBuyers = () => {
       const sampleBuyers = res.buyers || res.results || [];
       setResults(sampleBuyers);
       setIsDemoWorkflow(true);
+      setIsDemoMode(true);
 
       setNotification({
         type: 'info',
@@ -546,6 +548,7 @@ export const DiscoverBuyers = () => {
             type="button"
             onClick={() => {
               setIsDemoWorkflow(false);
+              setIsDemoMode(false);
               setResults([]);
               setSelectedLeadIds(new Set());
             }}

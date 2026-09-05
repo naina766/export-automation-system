@@ -19,7 +19,8 @@ import {
   Package,
   Filter,
   Calendar,
-  RefreshCw
+  RefreshCw,
+  ArrowRight
 } from 'lucide-react';
 import apiService from '../services/api';
 import { useProduct } from '../context/ProductContext';
@@ -392,11 +393,31 @@ export const Reports = () => {
           <span className="text-xs text-slate-400">Total Entries: {filteredLogs.length}</span>
         </div>
 
-        <DataTable
-          columns={activityColumns}
-          data={filteredLogs}
-          emptyMessage="No outreach activity recorded yet. Dispatches will appear here."
-        />
+        {filteredLogs.length === 0 ? (
+          <div className="p-8 rounded-xl bg-[#050816] border border-[#1E293B] text-center space-y-3">
+            <Send className="w-8 h-8 text-purple-400/60 mx-auto" />
+            <div>
+              <div className="text-sm font-bold text-white">No Outreach Dispatches Yet</div>
+              <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">
+                Run a qualified campaign to see real-time email delivery status and engagement metrics here.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => navigate('/send')}
+              className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold shadow transition-all inline-flex items-center gap-2 active:scale-95 cursor-pointer"
+            >
+              <span>Go to Gmail Campaign</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        ) : (
+          <DataTable
+            columns={activityColumns}
+            data={filteredLogs}
+            emptyMessage="No outreach activity recorded yet. Dispatches will appear here."
+          />
+        )}
       </div>
     </div>
   );
