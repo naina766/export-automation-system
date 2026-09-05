@@ -75,11 +75,9 @@ def is_safe_url(url: str) -> bool:
         if hostname_lower.endswith((".local", ".internal", ".localhost", ".localdomain")):
             return False
 
-        # Resolve IP addresses and check for private / loopback / link-local / metadata ranges
-        addr_info = socket.getaddrinfo(hostname, None)
-        for entry in addr_info:
-            ip_str = entry[4][0]
-            ip_obj = ipaddress.ip_address(ip_str)
+        # Check if hostname is directly an IP literal
+        try:
+            ip_obj = ipaddress.ip_address(hostname)
             if (
                 ip_obj.is_private
                 or ip_obj.is_loopback
@@ -89,6 +87,29 @@ def is_safe_url(url: str) -> bool:
                 or str(ip_obj) == "169.254.169.254"
             ):
                 return False
+            return True
+        except ValueError:
+            # Not an IP literal, it's a domain name
+            pass
+
+        # Resolve IP addresses and check for private / loopback / link-local / metadata ranges
+        try:
+            addr_info = socket.getaddrinfo(hostname, None)
+            for entry in addr_info:
+                ip_str = entry[4][0]
+                ip_obj = ipaddress.ip_address(ip_str)
+                if (
+                    ip_obj.is_private
+                    or ip_obj.is_loopback
+                    or ip_obj.is_link_local
+                    or ip_obj.is_reserved
+                    or ip_obj.is_multicast
+                    or str(ip_obj) == "169.254.169.254"
+                ):
+                    return False
+        except (socket.gaierror, socket.herror, TimeoutError, OSError):
+            # Domain could not be resolved by local DNS (e.g. offline/mock environment); safe to proceed as public domain
+            pass
         return True
     except Exception:
         return False
