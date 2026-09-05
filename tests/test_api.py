@@ -8,7 +8,8 @@ import pytest
 from main import app
 from search.web_search_provider import SearchProviderNotConfiguredError
 
-client = TestClient(app)
+TEST_KEY = "test-auth-secret-key-12345"
+client = TestClient(app, headers={"X-API-Key": TEST_KEY})
 
 def test_health_endpoint():
     response = client.get("/api/health")
@@ -306,26 +307,43 @@ def test_campaigns_list_endpoint():
     assert data["success"] is True
     assert "campaigns" in data
 
+def test_api_key_auth_fail_closed_when_env_key_unconfigured(monkeypatch):
+    """FAIL CLOSED: If EXPORT_API_KEY is not configured on server, access MUST be denied."""
+    monkeypatch.delenv("EXPORT_API_KEY", raising=False)
+    monkeypatch.delenv("API_KEY", raising=False)
+    unauth_client = TestClient(app)
+    
+    # 1. Without header -> 401
+    res1 = unauth_client.post("/api/products", json={"name": "Test Unconfigured"})
+    assert res1.status_code == 401
+
+    # 2. With arbitrary header -> 401
+    res2 = unauth_client.post("/api/products", json={"name": "Test Unconfigured"}, headers={"X-API-Key": "some-key"})
+    assert res2.status_code == 401
+
 def test_api_key_auth_protected_without_key(monkeypatch):
     monkeypatch.setenv("EXPORT_API_KEY", "super_secret_test_key_12345")
+    unauth_client = TestClient(app)
     # Mutative endpoint without header should return 401
-    response = client.post("/api/products", json={"name": "Test Protected Product"})
+    response = unauth_client.post("/api/products", json={"name": "Test Protected Product"})
     assert response.status_code == 401
-    assert response.json()["detail"] == "Authentication required"
+    assert "Authentication required" in response.json()["detail"]
 
 def test_api_key_auth_protected_with_wrong_key(monkeypatch):
     monkeypatch.setenv("EXPORT_API_KEY", "super_secret_test_key_12345")
-    response = client.post(
+    unauth_client = TestClient(app)
+    response = unauth_client.post(
         "/api/products",
         json={"name": "Test Protected Product"},
         headers={"X-API-Key": "wrong_key_xyz"}
     )
     assert response.status_code == 401
-    assert response.json()["detail"] == "Authentication required"
+    assert "Authentication required" in response.json()["detail"]
 
 def test_api_key_auth_protected_with_valid_key(monkeypatch):
     monkeypatch.setenv("EXPORT_API_KEY", "super_secret_test_key_12345")
-    response = client.post(
+    auth_client = TestClient(app)
+    response = auth_client.post(
         "/api/products",
         json={
             "name": "Auth Test Gong",
@@ -338,11 +356,12 @@ def test_api_key_auth_protected_with_valid_key(monkeypatch):
     assert data["success"] is True
     prod_id = data["product"]["id"]
     # Clean up
-    client.delete(f"/api/products/{prod_id}", headers={"X-API-Key": "super_secret_test_key_12345"})
+    auth_client.delete(f"/api/products/{prod_id}", headers={"X-API-Key": "super_secret_test_key_12345"})
 
 def test_api_key_auth_bearer_token_support(monkeypatch):
     monkeypatch.setenv("EXPORT_API_KEY", "super_secret_test_key_12345")
-    response = client.post(
+    auth_client = TestClient(app)
+    response = auth_client.post(
         "/api/settings",
         json={"SEND_DELAY": 2},
         headers={"Authorization": "Bearer super_secret_test_key_12345"}

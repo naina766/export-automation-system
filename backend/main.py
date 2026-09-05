@@ -92,11 +92,15 @@ def require_api_key(
     """
     Enforces server-side API Key authentication for mutative and sensitive endpoints.
     Uses constant-time string comparison to prevent timing attacks.
+    FAIL CLOSED: If EXPORT_API_KEY is missing or unconfigured, access is strictly denied.
     """
     expected_key = os.getenv("EXPORT_API_KEY", "").strip() or os.getenv("API_KEY", "").strip()
-    # If no server API key is configured, pass through (e.g. unconfigured local dev)
     if not expected_key:
-        return True
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required: server API key is not configured",
+            headers={"WWW-Authenticate": "ApiKey"}
+        )
 
     provided_key = x_api_key
     if not provided_key and authorization and authorization.startswith("Bearer "):

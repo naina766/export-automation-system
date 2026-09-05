@@ -198,7 +198,7 @@ def test_gmail_retry_mechanism_retries_transient_error():
 def test_discovery_pipeline_summary_and_valid_buyer_filtering():
     from fastapi.testclient import TestClient
     from main import app
-    client = TestClient(app)
+    client = TestClient(app, headers={"X-API-Key": "test-auth-secret-key-12345"})
 
     mock_leads = [
         {

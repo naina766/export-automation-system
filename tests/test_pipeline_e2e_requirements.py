@@ -42,7 +42,7 @@ from search.web_search_provider import WebBuyerSearchProvider, UnsupportedSearch
 from search.parser import is_safe_url
 from validation.email_validator import validate_email_address
 
-client = TestClient(app)
+client = TestClient(app, headers={"X-API-Key": "test-auth-secret-key-12345"})
 
 def test_1_buyer_without_email_not_eligible_cannot_send():
     """TEST 1: Buyer without email -> not eligible -> cannot send."""

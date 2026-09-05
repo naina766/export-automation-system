@@ -4,7 +4,7 @@ from fastapi.testclient import TestClient
 from backend.main import app
 from products.catalog import ProductCatalog
 
-client = TestClient(app)
+client = TestClient(app, headers={"X-API-Key": "test-auth-secret-key-12345"})
 
 def test_list_products():
     response = client.get("/api/products")

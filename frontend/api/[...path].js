@@ -10,6 +10,11 @@ export const config = {
 export default async function handler(req, res) {
   const backendUrl = process.env.BACKEND_API_URL || "https://export-automation-system.onrender.com";
   const apiKey = process.env.EXPORT_API_KEY || process.env.API_KEY || "";
+  if (!apiKey) {
+    return res.status(500).json({
+      detail: "Server configuration error: EXPORT_API_KEY is not configured on Vercel server proxy."
+    });
+  }
 
   // Extract path from query params or URL
   const { path } = req.query;
@@ -31,9 +36,7 @@ export default async function handler(req, res) {
     }
   }
 
-  if (apiKey) {
-    headers['x-api-key'] = apiKey;
-  }
+  headers['x-api-key'] = apiKey;
 
   try {
     const fetchOptions = {

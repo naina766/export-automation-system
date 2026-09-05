@@ -8,9 +8,12 @@ if str(BACKEND_DIR) not in sys.path:
 
 import config
 
+AUTH_TEST_KEY = "test-auth-secret-key-12345"
+
 @pytest.fixture(autouse=True)
 def isolate_test_data(monkeypatch, tmp_path):
     """Ensure all automated tests run against temporary isolated data files and never modify production data."""
+    monkeypatch.setenv("EXPORT_API_KEY", AUTH_TEST_KEY)
     test_data_dir = tmp_path / "data"
     test_data_dir.mkdir(parents=True, exist_ok=True)
 
