@@ -191,3 +191,184 @@ def test_12_real_campaign_never_falls_back_to_test_user():
     assert "Test User" not in body
     assert "Alps Sound Studio Team" in body
     assert "Switzerland" in body
+
+
+# =========================================================================
+# API & PERSISTENCE REGRESSION TESTS (REQUIREMENT 23 ITEMS 1-17)
+# =========================================================================
+
+from fastapi.testclient import TestClient
+from backend.main import app
+from backend.leads.lead_service import LeadService
+
+TEST_API_KEY = "test-auth-secret-key-12345"
+client = TestClient(app, headers={"X-API-Key": TEST_API_KEY})
+
+
+def test_13_add_real_buyer_api_persists_properly(tmp_path):
+    """POST /api/leads creates a real buyer and associates with selected product."""
+    payload = {
+        "contact_name": "Rahul Sharma",
+        "email": "rahul@abcimports.com",
+        "company_name": "ABC Imports",
+        "country": "United States",
+        "phone": "+1 415 555 0199",
+        "website": "https://abcimports.com",
+        "buyer_type": "Distributor",
+        "product_id": "himalayan-sound-healing-bowls"
+    }
+    response = client.post("/api/leads", json=payload)
+    assert response.status_code == 200
+    data = response.json()
+    assert data["success"] is True
+    lead = data["lead"]
+    assert lead["contact_name"] == "Rahul Sharma"
+    assert lead["company_name"] == "ABC Imports"
+    assert lead["email"] == "rahul@abcimports.com"
+    assert lead["country"] == "United States"
+    assert lead["product_id"] == "himalayan-sound-healing-bowls"
+    assert lead["outreach_status"] == "eligible"
+    assert lead["qualification_status"] == "qualified"
+    assert "lead_id" in lead
+
+    # Verify retrieval
+    lead_id = lead["lead_id"]
+    get_res = client.get(f"/api/leads/{lead_id}")
+    assert get_res.status_code == 200
+    assert get_res.json()["lead"]["contact_name"] == "Rahul Sharma"
+
+
+def test_14_required_fields_validation_on_add_buyer():
+    """POST /api/leads fails with 422 if required fields are missing."""
+    # Missing contact_name
+    res = client.post("/api/leads", json={
+        "contact_name": "   ",
+        "email": "valid@company.com",
+        "company_name": "Company Ltd",
+        "country": "Germany"
+    })
+    assert res.status_code == 422
+
+    # Missing email
+    res = client.post("/api/leads", json={
+        "contact_name": "Marcus Chen",
+        "email": "",
+        "company_name": "Company Ltd",
+        "country": "Germany"
+    })
+    assert res.status_code == 422
+
+    # Missing company
+    res = client.post("/api/leads", json={
+        "contact_name": "Marcus Chen",
+        "email": "marcus@company.com",
+        "company_name": "  ",
+        "country": "Germany"
+    })
+    assert res.status_code == 422
+
+    # Missing country
+    res = client.post("/api/leads", json={
+        "contact_name": "Marcus Chen",
+        "email": "marcus@company.com",
+        "company_name": "Company Ltd",
+        "country": ""
+    })
+    assert res.status_code == 422
+
+
+def test_15_invalid_email_syntax_rejected():
+    """POST /api/leads fails with 422 on invalid email format."""
+    res = client.post("/api/leads", json={
+        "contact_name": "Rahul Sharma",
+        "email": "not-an-email",
+        "company_name": "ABC Imports",
+        "country": "United States"
+    })
+    assert res.status_code == 422
+    assert "valid email" in res.json().get("detail", "").lower()
+
+
+def test_16_banned_test_user_placeholders_rejected():
+    """POST /api/leads rejects placeholder names like 'Test User' in production."""
+    for placeholder in ["Test User", "testuser", "Test Partner", "Procurement Lead", "Sample", "John Doe"]:
+        res = client.post("/api/leads", json={
+            "contact_name": placeholder,
+            "email": "realbuyer@company.com",
+            "company_name": "Valid Enterprise",
+            "country": "United Kingdom"
+        })
+        assert res.status_code == 422, f"Expected 422 for placeholder '{placeholder}'"
+        assert "real contact name" in res.json().get("detail", "").lower()
+
+
+def test_17_edit_and_remove_buyer():
+    """PATCH /api/leads/{id} edits details and DELETE /api/leads/{id} removes buyer."""
+    # Create buyer
+    create_res = client.post("/api/leads", json={
+        "contact_name": "Elena Rostova",
+        "email": "elena@nordicsound.se",
+        "company_name": "Nordic Sound",
+        "country": "Sweden",
+        "product_id": "tibetan-singing-bowls"
+    })
+    assert create_res.status_code == 200
+    lead_id = create_res.json()["lead"]["lead_id"]
+
+    # Edit buyer
+    patch_res = client.patch(f"/api/leads/{lead_id}", json={
+        "contact_name": "Elena Rostova-Berg",
+        "company_name": "Nordic Sound AB",
+        "phone": "+46 8 123 456"
+    })
+    assert patch_res.status_code == 200
+    updated = patch_res.json()["lead"]
+    assert updated["contact_name"] == "Elena Rostova-Berg"
+    assert updated["company_name"] == "Nordic Sound AB"
+
+    # Remove buyer
+    del_res = client.delete(f"/api/leads/{lead_id}")
+    assert del_res.status_code == 200
+
+    # Verify deleted
+    get_res = client.get(f"/api/leads/{lead_id}")
+    assert get_res.status_code == 404
+
+
+def test_18_product_isolation_for_leads():
+    """LeadService and /api/leads enforce product isolation."""
+    # Create Lead for Product A
+    lead_a = client.post("/api/leads", json={
+        "contact_name": "Alice Green",
+        "email": "alice@soundproducta.com",
+        "company_name": "Sound Sanctuary",
+        "country": "Australia",
+        "product_id": "himalayan-sound-healing-bowls"
+    }).json()["lead"]
+
+    # Create Lead for Product B
+    lead_b = client.post("/api/leads", json={
+        "contact_name": "Bob Blue",
+        "email": "bob@meditationproductb.ca",
+        "company_name": "Meditation World",
+        "country": "Canada",
+        "product_id": "tibetan-singing-bowls"
+    }).json()["lead"]
+
+    # Fetch for Himalayan
+    res_himalayan = client.get("/api/leads?product_id=himalayan-sound-healing-bowls").json()
+    ids_himalayan = [l.get("lead_id") for l in res_himalayan["leads"]]
+    assert lead_a["lead_id"] in ids_himalayan
+    assert lead_b["lead_id"] not in ids_himalayan
+
+    # Fetch for Tibetan
+    res_tibetan = client.get("/api/leads?product_id=tibetan-singing-bowls").json()
+    ids_tibetan = [l.get("lead_id") for l in res_tibetan["leads"]]
+    assert lead_b["lead_id"] in ids_tibetan
+    assert lead_a["lead_id"] not in ids_tibetan
+
+    # Clean up
+    client.delete(f"/api/leads/{lead_a['lead_id']}")
+    client.delete(f"/api/leads/{lead_b['lead_id']}")
+
+

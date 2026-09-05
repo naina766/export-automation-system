@@ -5,6 +5,8 @@ Live B2B lead discovery, contact validation, Gemini AI qualification, and person
 import os
 import sys
 import secrets
+import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional, Dict, Any, List, Union
 import pandas as pd
@@ -224,6 +226,16 @@ class UpdateLeadRequest(BaseModel):
     website: Optional[str] = None
     country: Optional[str] = None
     buyer_type: Optional[str] = None
+
+class CreateBuyerRequest(BaseModel):
+    contact_name: str
+    email: str
+    company_name: str
+    country: str
+    phone: Optional[str] = None
+    website: Optional[str] = None
+    buyer_type: Optional[str] = "Distributor"
+    product_id: Optional[str] = None
 
 class ClassifyRequest(BaseModel):
     product_id: Optional[str] = None
@@ -666,6 +678,84 @@ async def update_lead_endpoint(payload: UpdateLeadRequest):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to update buyer: {str(e)}")
+
+@app.post("/api/leads", dependencies=[Depends(require_api_key)])
+@app.post("/api/buyers", dependencies=[Depends(require_api_key)])
+async def create_buyer_endpoint(payload: CreateBuyerRequest):
+    """
+    Creates a new buyer lead for the specified product.
+    Validates required fields (contact_name, email, company_name, country).
+    Rejects placeholder names in production.
+    """
+    contact_name = payload.contact_name.strip()
+    company_name = payload.company_name.strip()
+    country = payload.country.strip()
+    email = payload.email.strip().lower()
+
+    if not contact_name:
+        raise HTTPException(status_code=422, detail="Contact Name is required.")
+
+    banned_placeholders = {
+        "test user", "testuser", "test partner", "test recipient", "procurement lead",
+        "purchasing manager", "procurement manager", "sample", "john doe", "jane doe", "user", "customer"
+    }
+    if contact_name.lower() in banned_placeholders:
+        raise HTTPException(status_code=422, detail="Please enter a real contact name (placeholders like 'Test User' are not allowed).")
+
+    if not company_name:
+        raise HTTPException(status_code=422, detail="Company Name is required.")
+
+    if not country:
+        raise HTTPException(status_code=422, detail="Country is required.")
+
+    if not email:
+        raise HTTPException(status_code=422, detail="Email is required.")
+
+    val_res = validate_email_address(email)
+    if not val_res.get("syntax_valid"):
+        raise HTTPException(status_code=422, detail="Please enter a valid email address with correct syntax.")
+
+    target_prod = ProductCatalog.get_product(payload.product_id) if payload.product_id else ProductCatalog.get_active_product()
+    prod_id = target_prod.get("id") if target_prod else (payload.product_id or "himalayan-sound-healing-bowls")
+
+    clean_slug = re.sub(r'[^a-zA-Z0-9]', '', company_name)[:10].lower() or "buyer"
+    lead_id = f"lead-{clean_slug}-{uuid.uuid4().hex[:6]}"
+
+    lead_record = {
+        "lead_id": lead_id,
+        "id": lead_id,
+        "product_id": prod_id,
+        "company_name": company_name,
+        "company": company_name,
+        "contact_name": contact_name,
+        "buyer_name": contact_name,
+        "email": email,
+        "phone": (payload.phone or "").strip(),
+        "website": (payload.website or "").strip(),
+        "country": country,
+        "buyer_type": (payload.buyer_type or "Distributor").strip(),
+        "source": "Manual Entry",
+        "source_url": (payload.website or "").strip(),
+        "email_status": "valid",
+        "syntax_valid": "True",
+        "valid": "True",
+        "is_duplicate": "False",
+        "qualification_status": "qualified",
+        "ai_score": "90",
+        "ai_confidence": "1.0",
+        "ai_reason": "Manually verified buyer entered for export campaign outreach.",
+        "priority": "high",
+        "outreach_status": "eligible",
+        "is_demo": "False",
+        "discovered_at": datetime.now(timezone.utc).isoformat()
+    }
+
+    created = LeadService.create_lead(lead_record)
+    return {
+        "success": True,
+        "message": "Buyer added successfully and is campaign eligible.",
+        "lead": created
+    }
 
 @app.get("/api/leads/{lead_id}")
 async def get_single_lead_endpoint(lead_id: str):

@@ -187,6 +187,21 @@ export const apiService = {
     return res.data;
   },
 
+  createLead: async (buyerData) => {
+    const res = await apiClient.post('/leads', buyerData);
+    return res.data;
+  },
+
+  patchLead: async (leadId, updates) => {
+    const res = await apiClient.patch(`/leads/${encodeURIComponent(leadId)}`, updates);
+    return res.data;
+  },
+
+  deleteLead: async (leadId) => {
+    const res = await apiClient.delete(`/leads/${encodeURIComponent(leadId)}`);
+    return res.data;
+  },
+
   updateLead: async (payload) => {
     const res = await apiClient.post('/leads/update', payload);
     return res.data;
