@@ -85,9 +85,10 @@ class ActivityLogger:
         if not SENT_LOG_CSV.exists():
             return []
         try:
-            df = pd.read_csv(SENT_LOG_CSV, dtype=str).fillna("")
+            df = pd.read_csv(SENT_LOG_CSV, dtype=str, encoding="utf-8", on_bad_lines="skip").fillna("")
             if df.empty:
                 return []
+
             records = df.to_dict(orient="records")
             records.reverse()
             return records[:limit]

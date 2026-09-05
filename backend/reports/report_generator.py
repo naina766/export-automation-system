@@ -159,9 +159,10 @@ class ReportGenerator:
         # 3. Analyze sent_log.csv
         if SENT_LOG_CSV.exists():
             try:
-                sent_df = pd.read_csv(SENT_LOG_CSV, dtype=str, encoding="utf-8").fillna("")
+                sent_df = pd.read_csv(SENT_LOG_CSV, dtype=str, encoding="utf-8", on_bad_lines="skip").fillna("")
                 if product_id and "product_id" in sent_df.columns:
                     sent_df = sent_df[sent_df["product_id"] == product_id]
+
                 if not sent_df.empty:
                     prod_successful = 0
                     prod_failed = 0
