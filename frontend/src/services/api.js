@@ -2,11 +2,7 @@ import axios from 'axios';
 
 let base = import.meta.env.VITE_API_BASE_URL;
 if (!base || base.trim() === '') {
-  if (typeof window !== 'undefined' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
-    base = 'https://export-automation-system.onrender.com/api';
-  } else {
-    base = '/api';
-  }
+  base = '/api';
 }
 const API_BASE_URL = base.replace(/\/+$/, '');
 
