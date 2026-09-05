@@ -60,7 +60,7 @@ app = FastAPI(
     version="2.0.0"
 )
 
-# Enable CORS for React Frontend (configurable via FRONTEND_URL env var)
+# Enable CORS for React Frontend (supports all Vercel deployments, previews & local dev)
 frontend_env_url = os.getenv("FRONTEND_URL", "").strip()
 allowed_origins = [
     "http://localhost:5173",
@@ -76,9 +76,11 @@ if frontend_env_url and frontend_env_url not in allowed_origins:
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
+    allow_origin_regex=r"^(https://.*\.vercel\.app|https://.*\.onrender\.com|http://localhost(:\d+)?|http://127\.0\.0\.1(:\d+)?)$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"]
 )
 
 
