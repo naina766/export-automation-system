@@ -1,6 +1,14 @@
 import axios from 'axios';
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api';
+let base = import.meta.env.VITE_API_BASE_URL;
+if (!base || base.trim() === '') {
+  if (typeof window !== 'undefined' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+    base = 'https://export-automation-system.onrender.com/api';
+  } else {
+    base = '/api';
+  }
+}
+const API_BASE_URL = base.replace(/\/+$/, '');
 
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
@@ -9,6 +17,7 @@ const apiClient = axios.create({
   },
   timeout: 35000,
 });
+
 
 export const apiService = {
   // Health
