@@ -39,7 +39,7 @@ DEFAULT_SEED_PRODUCTS = [
         ],
         "email_subject_template": "Export Supply Partnership: {{product_name}} for {{company_name}}",
         "email_body_template": "Hello {{contact_name}},\n\nI am reaching out regarding {{company_name}} in {{country}}.\n\nAs a premier direct exporter of authentic {{product_name}}, we partner with leading wellness distributors and specialty retailers across {{country}}.\n\nWe would welcome the opportunity to supply your organization with export-grade inventory directly from our artisans.\n\nPlease find our catalog and B2B pricing schedule attached.\n\nBest regards,\nExport Sales Team",
-        "catalog_path": "assets/company_presentation.pdf",
+        "catalog_path": "assets/himalayan_sound_healing_bowls_catalog.pdf",
         "active": True
     },
     {
@@ -67,7 +67,7 @@ DEFAULT_SEED_PRODUCTS = [
         ],
         "email_subject_template": "B2B Export Inquiry: Authentic {{product_name}} for {{company_name}}",
         "email_body_template": "Hello {{contact_name}},\n\nWe noticed {{company_name}}'s focus on mindfulness and wellness products in {{country}}.\n\nOur workshop exports certified authentic {{product_name}} crafted using traditional alloy compositions. We offer reliable international freight and competitive distributor tiers.\n\nAttached is our current catalog for your review.\n\nWarm regards,\nInternational Trade Department",
-        "catalog_path": "assets/company_presentation.pdf",
+        "catalog_path": "assets/tibetan_singing_bowls_catalog.pdf",
         "active": False
     },
     {
@@ -95,7 +95,7 @@ DEFAULT_SEED_PRODUCTS = [
         ],
         "email_subject_template": "Wholesale Partnership: Precision {{product_name}} for {{company_name}}",
         "email_body_template": "Hello {{contact_name}},\n\nI hope this email finds you well at {{company_name}}.\n\nWe specialize in bulk manufacturing and export of high-purity {{product_name}} with accurate frequency calibration (432Hz / 528Hz).\n\nIf {{company_name}} is interested in expanding your inventory with direct factory margins, please review our attached catalog.\n\nBest regards,\nOEM Export Coordinator",
-        "catalog_path": "assets/company_presentation.pdf",
+        "catalog_path": "assets/crystal_singing_bowls_catalog.pdf",
         "active": False
     },
     {
@@ -123,7 +123,7 @@ DEFAULT_SEED_PRODUCTS = [
         ],
         "email_subject_template": "Direct Supply of Handcrafted {{product_name}} — {{company_name}}",
         "email_body_template": "Hello {{contact_name}},\n\nReaching out from our Himalayan artisan export facility regarding {{company_name}}.\n\nWe produce artisan-packaged {{product_name}} with high consumer appeal and complete accessory sets (cushion + striker). We provide custom branding and export shipping to {{country}}.\n\nPlease find our presentation and wholesale volume discounts attached.\n\nBest regards,\nCommercial Outreach Team",
-        "catalog_path": "assets/company_presentation.pdf",
+        "catalog_path": "assets/meditation_bowls_catalog.pdf",
         "active": False
     },
     {
@@ -151,7 +151,7 @@ DEFAULT_SEED_PRODUCTS = [
         ],
         "email_subject_template": "Export Opportunity: {{product_name}} for {{company_name}}",
         "email_body_template": "Hello {{contact_name}},\n\nI am contacting you on behalf of our export workshop regarding prospective supply for {{company_name}} in {{country}}.\n\nOur authentic {{product_name}} offer resonant sustain and handcrafted artisan finishes that perform exceptionally well in premium retail and therapeutic settings.\n\nOur catalog is attached for your review. We look forward to connecting.\n\nSincerely,\nLead Export Representative",
-        "catalog_path": "assets/company_presentation.pdf",
+        "catalog_path": "assets/handcrafted_brass_singing_bowls_catalog.pdf",
         "active": False
     }
 ]

@@ -989,6 +989,8 @@ async def send_campaign(payload: SendCampaignRequest):
         subj = payload.subject or (target_prod.get("email_subject_template") if target_prod else DEFAULT_SUBJECT)
         body = payload.body_template or (target_prod.get("email_body_template") if target_prod else DEFAULT_BODY)
         prod_name = target_prod.get("name") if target_prod else "Himalayan Sound Healing Bowls"
+        prod_id = target_prod.get("id") if target_prod else (payload.product_id or "himalayan-sound-healing-bowls")
+        pdf_path = target_prod.get("catalog_path") if target_prod else "assets/company_presentation.pdf"
 
         clean_sub = EmailSender.personalize_text(
             subj,
@@ -996,7 +998,8 @@ async def send_campaign(payload: SendCampaignRequest):
             company_name=payload.custom_company_name,
             country=payload.custom_country,
             buyer_type=payload.custom_buyer_type,
-            product=prod_name
+            product=prod_name,
+            allow_test_names=True
         )
         clean_body = EmailSender.personalize_text(
             body,
@@ -1004,41 +1007,59 @@ async def send_campaign(payload: SendCampaignRequest):
             company_name=payload.custom_company_name,
             country=payload.custom_country,
             buyer_type=payload.custom_buyer_type,
-            product=prod_name
+            product=prod_name,
+            allow_test_names=True
         )
 
-        pdf_att = "assets/company_presentation.pdf" if payload.attach_presentation else None
+        pdf_att = pdf_path if payload.attach_presentation else None
         success, error_msg = EmailSender.send_smtp_email(
             to_email=payload.custom_email.strip(),
             subject=clean_sub,
             body_text=clean_body,
-            attachment_path=pdf_att
+            attachment_path=pdf_att,
+            require_attachment=payload.attach_presentation
         )
 
         status_str = "SENT" if success else "FAILED"
         ActivityLogger.log_activity(
-            buyer_name=payload.custom_buyer_name or "Test Recipient",
-            company=payload.custom_company_name or "Custom Test",
+            buyer_name=payload.custom_buyer_name or (f"{payload.custom_company_name} Team" if payload.custom_company_name else "Custom Recipient"),
+            company=payload.custom_company_name or "Custom Organization",
             email=payload.custom_email.strip(),
             classification="custom",
             mode="SMTP",
             status=status_str,
             error=error_msg if not success else "",
-            campaign=prod_name
+            campaign=prod_name,
+            product_id=prod_id
         )
+
+        att_filename = Path(pdf_path).name if (payload.attach_presentation and success) else None
 
         return {
             "success": success,
             "dispatched": 1 if success else 0,
             "failed": 0 if success else 1,
+            "recipient": payload.custom_email.strip(),
+            "contact_name": payload.custom_buyer_name or (f"{payload.custom_company_name} Team" if payload.custom_company_name else "Company Team"),
+            "attachment": {
+                "attached": bool(payload.attach_presentation and success),
+                "filename": att_filename
+            },
+            "error": error_msg if not success else None,
             "results": {
                 "audience": "custom",
                 "sent_count": 1 if success else 0,
                 "failed_count": 0 if success else 1,
                 "results": [{
                     "recipient": payload.custom_email.strip(),
+                    "company_name": payload.custom_company_name or "Custom Organization",
+                    "contact_name": payload.custom_buyer_name or (f"{payload.custom_company_name} Team" if payload.custom_company_name else "Company Team"),
                     "status": "sent" if success else "failed",
-                    "error": error_msg if not success else None
+                    "error": error_msg if not success else None,
+                    "attachment": {
+                        "attached": bool(payload.attach_presentation and success),
+                        "filename": att_filename
+                    }
                 }]
             }
         }
@@ -1084,6 +1105,8 @@ async def send_test_email(payload: TestEmailRequest):
     subj = payload.subject or (target_prod.get("email_subject_template") if target_prod else DEFAULT_SUBJECT)
     body = payload.body_template or (target_prod.get("email_body_template") if target_prod else DEFAULT_BODY)
     prod_name = target_prod.get("name") if target_prod else "Himalayan Sound Healing Bowls"
+    prod_id = target_prod.get("id") if target_prod else (payload.product_id or "himalayan-sound-healing-bowls")
+    pdf_path = target_prod.get("catalog_path") if target_prod else "assets/company_presentation.pdf"
 
     clean_sub = EmailSender.personalize_text(
         subj,
@@ -1091,7 +1114,8 @@ async def send_test_email(payload: TestEmailRequest):
         company_name=payload.company_name,
         country=payload.country,
         buyer_type=payload.buyer_type,
-        product=prod_name
+        product=prod_name,
+        allow_test_names=True
     )
     clean_body = EmailSender.personalize_text(
         body,
@@ -1099,32 +1123,43 @@ async def send_test_email(payload: TestEmailRequest):
         company_name=payload.company_name,
         country=payload.country,
         buyer_type=payload.buyer_type,
-        product=prod_name
+        product=prod_name,
+        allow_test_names=True
     )
 
-    pdf_att = "assets/company_presentation.pdf" if payload.attach_presentation else None
+    pdf_att = pdf_path if payload.attach_presentation else None
     success, error_msg = EmailSender.send_smtp_email(
         to_email=payload.recipient_email.strip(),
         subject=clean_sub,
         body_text=clean_body,
-        attachment_path=pdf_att
+        attachment_path=pdf_att,
+        require_attachment=payload.attach_presentation
     )
 
     status_str = "SENT" if success else "FAILED"
     ActivityLogger.log_activity(
-        buyer_name=payload.recipient_name or "Test Recipient",
+        buyer_name=payload.recipient_name or (f"{payload.company_name} Team" if payload.company_name else "Test Recipient"),
         company=payload.company_name or "Test Organization",
         email=payload.recipient_email.strip(),
         classification="custom",
         mode="SMTP_TEST",
         status=status_str,
         error=error_msg if not success else "",
-        campaign=f"[TEST] {prod_name}"
+        campaign=f"[TEST] {prod_name}",
+        product_id=prod_id
     )
+
+    att_filename = Path(pdf_path).name if (payload.attach_presentation and success) else None
 
     return {
         "success": success,
         "dispatched": 1 if success else 0,
+        "recipient": payload.recipient_email.strip(),
+        "contact_name": payload.recipient_name or (f"{payload.company_name} Team" if payload.company_name else "Test Recipient"),
+        "attachment": {
+            "attached": bool(payload.attach_presentation and success),
+            "filename": att_filename
+        },
         "error": error_msg if not success else None
     }
 

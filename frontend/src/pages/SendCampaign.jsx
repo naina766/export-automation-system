@@ -160,21 +160,24 @@ export const SendCampaign = () => {
   // Preview lead selection
   const targetedLeads = eligibleLeads.filter(l => selectedLeadIds.has(l.lead_id || l.id));
   const previewLead = isTestMode ? {
-    contact_name: customRecipient.name.trim() || 'Valued Partner',
-    company_name: customRecipient.company.trim() || 'Partner Organization',
+    contact_name: customRecipient.name.trim() || 'Test Recipient',
+    company_name: customRecipient.company.trim() || 'Test Organization',
     country: customRecipient.country.trim() || 'International',
     buyer_type: customRecipient.buyer_type.trim() || 'Wholesale Buyer',
-    email: customRecipient.email.trim() || 'partner@organization.com'
+    email: customRecipient.email.trim() || 'test@organization.com'
   } : (targetedLeads[0] || {
-    contact_name: 'Company Team',
+    contact_name: '',
     company_name: 'Targeted Buyer LLC',
     country: 'United States',
     buyer_type: 'Distributor',
     email: 'procurement@buyer.com'
   });
 
-  const previewContact = previewLead.contact_name || 'Company Team';
   const previewCompany = previewLead.company_name || previewLead.company || 'your organization';
+  const previewContact = (previewLead.contact_name && previewLead.contact_name.trim() && !['test user', 'valued partner', 'procurement lead', 'company team'].includes(previewLead.contact_name.trim().toLowerCase()))
+    ? previewLead.contact_name.trim()
+    : (previewCompany && previewCompany !== 'your organization' ? `${previewCompany} Team` : 'Company Team');
+
   const previewCountry = previewLead.country || 'your region';
   const previewType = previewLead.buyer_type || 'partner';
 
@@ -512,7 +515,7 @@ export const SendCampaign = () => {
                 <Paperclip className="w-4 h-4 text-purple-400" />
                 <div className="text-xs">
                   <div className="font-bold text-white">Attach Product Presentation Catalog (PDF)</div>
-                  <div className="text-[11px] text-slate-400">assets/company_presentation.pdf (Wholesale catalog)</div>
+                  <div className="text-[11px] text-slate-400">{selectedProduct?.catalog_path || 'assets/himalayan_sound_healing_bowls_catalog.pdf'} (Wholesale catalog)</div>
                 </div>
               </div>
               <input
@@ -562,7 +565,7 @@ export const SendCampaign = () => {
               {attachPdf && (
                 <div className="pt-2 border-t border-[#1E293B] flex items-center gap-2 text-[10px] text-purple-300">
                   <Paperclip className="w-3 h-3" />
-                  <span>Attached: Himalayan_Singing_Bowls_Export_Catalog.pdf</span>
+                  <span>Attached: {selectedProduct?.catalog_path ? selectedProduct.catalog_path.split('/').pop() : 'himalayan_sound_healing_bowls_catalog.pdf'}</span>
                 </div>
               )}
             </div>

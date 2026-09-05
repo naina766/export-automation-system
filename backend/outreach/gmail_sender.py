@@ -115,24 +115,37 @@ class EmailSender:
         country: Optional[str] = None,
         buyer_type: Optional[str] = None,
         product: Optional[str] = None,
-        buyer_name: Optional[str] = None
+        buyer_name: Optional[str] = None,
+        allow_test_names: bool = False
     ) -> str:
         """
-        Safely replaces placeholders:
+        Safely replaces template placeholders:
         {{company_name}}, {{contact_name}}, {{buyer_name}}, {{country}}, {{buyer_type}}, {{product_name}}, {{product}}
-        If contact_name is null/empty -> uses 'Company Team' (never 'undefined', 'null', 'Procurement Lead').
+        For real leads: uses lead.contact_name if present and non-placeholder.
+        If contact_name is null/empty/placeholder -> uses '{company_name} Team' or 'Company Team' (never fake human names like 'Test User' or 'Procurement Lead').
         """
-        clean_company = str(company_name).strip() if company_name and str(company_name).strip() not in ["", "None", "null"] else ""
+        clean_company = str(company_name).strip() if company_name and str(company_name).strip() not in ["", "None", "null", "undefined"] else ""
         raw_contact = contact_name or buyer_name
-        if raw_contact and str(raw_contact).strip() not in ["", "None", "null", "undefined", "Procurement Lead", "Purchasing Manager"]:
-            clean_name = str(raw_contact).strip()
+
+        banned_placeholders = {
+            "", "none", "null", "undefined", "test user", "testuser", "test recipient",
+            "procurement lead", "purchasing manager", "procurement manager", "sales manager",
+            "manager", "lead", "buyer", "customer", "user", "valued partner", "company team"
+        }
+
+        if raw_contact and str(raw_contact).strip():
+            candidate_name = str(raw_contact).strip()
+            if allow_test_names or candidate_name.lower() not in banned_placeholders:
+                clean_name = candidate_name
+            else:
+                clean_name = f"{clean_company} Team" if clean_company else "Company Team"
         else:
             clean_name = f"{clean_company} Team" if clean_company else "Company Team"
 
         clean_company_display = clean_company if clean_company else "your organization"
-        clean_country = str(country).strip() if country and str(country).strip() not in ["", "None", "null"] else "your region"
-        clean_type = str(buyer_type).strip() if buyer_type and str(buyer_type).strip() not in ["", "None", "null"] else "partner"
-        clean_product = str(product).strip() if product and str(product).strip() not in ["", "None", "null"] else "Himalayan Sound Healing Bowls"
+        clean_country = str(country).strip() if country and str(country).strip() not in ["", "None", "null", "undefined"] else "your region"
+        clean_type = str(buyer_type).strip() if buyer_type and str(buyer_type).strip() not in ["", "None", "null", "undefined"] else "partner"
+        clean_product = str(product).strip() if product and str(product).strip() not in ["", "None", "null", "undefined"] else "Himalayan Sound Healing Bowls"
 
         text = template
         text = text.replace("{{contact_name}}", clean_name)
@@ -147,6 +160,45 @@ class EmailSender:
         # Sanitize any stray unresolved double-brace tags
         text = re.sub(r"\{\{[a-zA-Z0-9_]+\}\}", "", text)
         return text
+
+    @classmethod
+    def build_mime_message(
+        cls,
+        to_email: str,
+        subject: str,
+        body_text: str,
+        from_email: Optional[str] = None,
+        attachment_path: Optional[str] = None,
+        require_attachment: bool = False
+    ) -> MIMEMultipart:
+        """
+        Constructs an in-memory RFC-compliant MIME email message with optional PDF attachment.
+        Enforces strict attachment validation if require_attachment is True.
+        """
+        gmail_user, _ = get_gmail_credentials()
+        sender_email = from_email or gmail_user or "outreach@exportautomation.com"
+
+        msg = MIMEMultipart()
+        msg["From"] = f"Export Outreach <{sender_email}>"
+        msg["To"] = to_email.strip()
+        msg["Subject"] = subject.strip()
+        msg.attach(MIMEText(body_text, "plain", "utf-8"))
+
+        if attachment_path:
+            att_path = AttachmentHandler.get_attachment_path(attachment_path)
+            if not att_path or not att_path.exists() or not att_path.is_file() or att_path.stat().st_size == 0:
+                if require_attachment:
+                    raise ValueError("Campaign attachment is unavailable. Email was not sent.")
+            else:
+                att = AttachmentHandler.get_mime_attachment(att_path)
+                if not att and require_attachment:
+                    raise ValueError("Campaign attachment is unavailable. Email was not sent.")
+                if att:
+                    msg.attach(att)
+        elif require_attachment:
+            raise ValueError("Campaign attachment is unavailable. Email was not sent.")
+
+        return msg
 
     @classmethod
     def get_today_sent_count(cls) -> int:
@@ -205,9 +257,10 @@ class EmailSender:
         subject: str,
         body_text: str,
         attachment_path: Optional[str] = None,
+        require_attachment: bool = False,
         max_retries: int = 2
     ) -> Tuple[bool, str]:
-        """Send email via Gmail SMTP with STARTTLS and retry resilience."""
+        """Send email via Gmail SMTP with STARTTLS, MIME attachment, and retry resilience."""
         gmail_user, gmail_pass = get_gmail_credentials()
         settings = load_settings()
         smtp_host = settings.get("SMTP_HOST", "smtp.gmail.com")
@@ -216,18 +269,17 @@ class EmailSender:
         if not gmail_user or not gmail_pass:
             return False, "GMAIL_CREDENTIALS_MISSING: Please configure GMAIL_EMAIL and GMAIL_APP_PASSWORD in backend .env"
 
-        msg = MIMEMultipart()
-        msg["From"] = f"Export Outreach <{gmail_user}>"
-        msg["To"] = to_email
-        msg["Subject"] = subject
-        msg.attach(MIMEText(body_text, "plain", "utf-8"))
-
-        if attachment_path:
-            p = Path(attachment_path)
-            if p.exists() and p.is_file():
-                att = AttachmentHandler.get_mime_attachment(p)
-                if att:
-                    msg.attach(att)
+        try:
+            msg = cls.build_mime_message(
+                to_email=to_email,
+                subject=subject,
+                body_text=body_text,
+                from_email=gmail_user,
+                attachment_path=attachment_path,
+                require_attachment=require_attachment
+            )
+        except ValueError as ve:
+            return False, str(ve)
 
         success, status = cls._send_smtp_with_retry(
             smtp_host=smtp_host,
@@ -251,7 +303,7 @@ class EmailSender:
     ) -> Dict[str, Any]:
         """
         Execute campaign outreach for selected lead_ids.
-        Runs final backend validation on every recipient and enforces limits.
+        Runs final backend validation on every recipient, resolves real contact names, and enforces limits.
         """
         settings = load_settings()
         daily_limit = int(settings.get("DAILY_SEND_LIMIT", 100))
@@ -341,6 +393,8 @@ class EmailSender:
             lead_dict = row.to_dict()
             lead_id = lead_dict.get("lead_id") or lead_dict.get("id")
             recipient_email = lead_dict.get("email")
+            company_name_val = lead_dict.get("company_name", lead_dict.get("company", ""))
+            raw_contact_val = lead_dict.get("contact_name") or lead_dict.get("buyer_name")
 
             # Final authoritative eligibility check
             is_eligible, reason = is_outreach_eligible(
@@ -352,7 +406,8 @@ class EmailSender:
             if not is_eligible:
                 results.append({
                     "lead_id": lead_id,
-                    "company_name": lead_dict.get("company_name", lead_dict.get("company", "")),
+                    "company_name": company_name_val,
+                    "contact_name": raw_contact_val or f"{company_name_val} Team",
                     "recipient": recipient_email,
                     "status": "rejected",
                     "reason": reason
@@ -364,7 +419,8 @@ class EmailSender:
             if successful_sends >= max_per_run:
                 results.append({
                     "lead_id": lead_id,
-                    "company_name": lead_dict.get("company_name", lead_dict.get("company", "")),
+                    "company_name": company_name_val,
+                    "contact_name": raw_contact_val or f"{company_name_val} Team",
                     "recipient": recipient_email,
                     "status": "rejected",
                     "reason": f"Campaign max per run limit ({max_per_run}) reached"
@@ -375,7 +431,8 @@ class EmailSender:
             if (already_sent_today + successful_sends) >= daily_limit:
                 results.append({
                     "lead_id": lead_id,
-                    "company_name": lead_dict.get("company_name", lead_dict.get("company", "")),
+                    "company_name": company_name_val,
+                    "contact_name": raw_contact_val or f"{company_name_val} Team",
                     "recipient": recipient_email,
                     "status": "rejected",
                     "reason": f"Daily send limit ({daily_limit}) reached"
@@ -383,48 +440,53 @@ class EmailSender:
                 skipped_count += 1
                 continue
 
-            # Personalize content
+            # Personalize content with real lead contact name (no placeholder leak)
             sub = cls.personalize_text(
                 subject_tpl,
-                contact_name=lead_dict.get("contact_name"),
-                buyer_name=lead_dict.get("buyer_name"),
-                company_name=lead_dict.get("company_name", lead_dict.get("company")),
+                contact_name=raw_contact_val,
+                company_name=company_name_val,
                 country=lead_dict.get("country"),
                 buyer_type=lead_dict.get("buyer_type"),
-                product=prod_name
+                product=prod_name,
+                allow_test_names=False
             )
 
             body = cls.personalize_text(
                 body_tpl,
-                contact_name=lead_dict.get("contact_name"),
-                buyer_name=lead_dict.get("buyer_name"),
-                company_name=lead_dict.get("company_name", lead_dict.get("company")),
+                contact_name=raw_contact_val,
+                company_name=company_name_val,
                 country=lead_dict.get("country"),
                 buyer_type=lead_dict.get("buyer_type"),
-                product=prod_name
+                product=prod_name,
+                allow_test_names=False
             )
 
-            # Execute Gmail SMTP Send
+            # Execute Gmail SMTP Send with strict attachment requirement if attach_presentation is True
             success, error_msg = cls.send_smtp_email(
                 to_email=recipient_email,
                 subject=sub,
                 body_text=body,
-                attachment_path=attachment_file
+                attachment_path=attachment_file,
+                require_attachment=attach_presentation
             )
 
             status_str = "SENT" if success else "FAILED"
             now_iso = datetime.now(timezone.utc).isoformat()
+            resolved_contact = raw_contact_val if (raw_contact_val and str(raw_contact_val).strip()) else (f"{company_name_val} Team" if company_name_val else "Company Team")
 
             ActivityLogger.log_activity(
-                buyer_name=lead_dict.get("contact_name") or "Company Team",
-                company=lead_dict.get("company_name", lead_dict.get("company", "")),
+                buyer_name=resolved_contact,
+                company=company_name_val,
                 email=recipient_email,
                 classification=lead_dict.get("buyer_type", "Distributor"),
                 mode="SMTP",
                 status=status_str,
                 error=error_msg if not success else "",
-                campaign=prod_name
+                campaign=prod_name,
+                product_id=product_id
             )
+
+            att_name = Path(attachment_file).name if (attachment_file and success) else None
 
             if success:
                 successful_sends += 1
@@ -444,10 +506,15 @@ class EmailSender:
 
             results.append({
                 "lead_id": lead_id,
-                "company_name": lead_dict.get("company_name", lead_dict.get("company", "")),
+                "company_name": company_name_val,
+                "contact_name": resolved_contact,
                 "recipient": recipient_email,
                 "status": "sent" if success else "failed",
                 "error": error_msg if not success else None,
+                "attachment": {
+                    "attached": bool(attachment_file and success),
+                    "filename": att_name
+                },
                 "timestamp": now_iso
             })
 
@@ -464,3 +531,4 @@ class EmailSender:
             "skipped": skipped_count,
             "results": results
         }
+
