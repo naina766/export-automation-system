@@ -7,7 +7,7 @@ import uuid
 import hashlib
 from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional
-from validation.email_validator import validate_email_address
+from backend.validation.email_validator import validate_email_address
 
 def generate_deterministic_lead_id(company: str, website: str, email: Optional[str], country: str) -> str:
     """Generate deterministic unique ID from normalized lead attributes."""

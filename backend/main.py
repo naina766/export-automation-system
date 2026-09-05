@@ -14,11 +14,8 @@ from pydantic import BaseModel, Field, field_validator
 
 BACKEND_DIR = Path(__file__).resolve().parent
 ROOT_DIR = BACKEND_DIR.parent
-for p in [str(BACKEND_DIR), str(ROOT_DIR)]:
-    if p not in sys.path:
-        sys.path.insert(0, p)
 
-from config import (
+from backend.config import (
     BUYERS_CSV,
     BUSINESS_EMAILS_CSV,
     INDIVIDUAL_EMAILS_CSV,
@@ -29,29 +26,29 @@ from config import (
     get_gmail_credentials,
     get_search_provider_config
 )
-from search.web_search_provider import (
+from backend.search.web_search_provider import (
     WebBuyerSearchProvider,
     SearchProviderNotConfiguredError,
     SearchProviderAPIError,
     UnsupportedSearchProviderError
 )
-from search.parser import extract_contact_from_public_website
+from backend.search.parser import extract_contact_from_public_website
 import httpx
 import re
-from extraction.data_extractor import DataExtractor
-from validation.email_validator import EmailValidator, validate_email_address
-from classification.gemini_classifier import LeadClassifier
-from outreach.attachment_handler import AttachmentHandler
-from outreach.gmail_sender import (
+from backend.extraction.data_extractor import DataExtractor
+from backend.validation.email_validator import EmailValidator, validate_email_address
+from backend.classification.gemini_classifier import LeadClassifier
+from backend.outreach.attachment_handler import AttachmentHandler
+from backend.outreach.gmail_sender import (
     EmailSender,
     is_outreach_eligible,
     DEFAULT_SUBJECT,
     DEFAULT_BODY
 )
-from logging_module.activity_logger import ActivityLogger
-from reports.report_generator import ReportGenerator
-from products.catalog import ProductCatalog
-from leads.lead_service import LeadService, LeadState
+from backend.logging_module.activity_logger import ActivityLogger
+from backend.reports.report_generator import ReportGenerator
+from backend.products.catalog import ProductCatalog
+from backend.leads.lead_service import LeadService, LeadState
 
 
 # Initialize FastAPI app
@@ -1309,7 +1306,7 @@ async def test_search_connection():
 async def get_catalog_file():
     """Serves the product catalog presentation PDF for in-browser preview or download."""
     from fastapi.responses import FileResponse
-    from config import COMPANY_PRESENTATION_PDF
+    from backend.config import COMPANY_PRESENTATION_PDF
     if not COMPANY_PRESENTATION_PDF.exists():
         raise HTTPException(status_code=404, detail="Company presentation PDF not found.")
     return FileResponse(

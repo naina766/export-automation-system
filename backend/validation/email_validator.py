@@ -6,7 +6,7 @@ import re
 from typing import Dict, Any, List, Set, Tuple, Optional
 import pandas as pd
 from email_validator import validate_email as ext_validate_email, EmailNotValidError
-from config import SENT_LOG_CSV
+from backend.config import SENT_LOG_CSV
 
 EMAIL_REGEX = re.compile(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$")
 

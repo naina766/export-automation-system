@@ -14,21 +14,16 @@ from datetime import datetime, timezone
 from typing import List, Dict, Any, Tuple, Optional, Set
 import pandas as pd
 
-BACKEND_DIR = Path(__file__).resolve().parent.parent
-if str(BACKEND_DIR) not in sys.path:
-    sys.path.insert(0, str(BACKEND_DIR))
+from backend import config
+from backend.outreach.attachment_handler import AttachmentHandler
+from backend.logging_module.activity_logger import ActivityLogger
+from backend.validation.email_validator import EmailValidator, validate_email_address
 
-from config import (
-    load_settings,
-    get_gmail_credentials,
-    BUYERS_CSV,
-    BUSINESS_EMAILS_CSV,
-    INDIVIDUAL_EMAILS_CSV,
-    SENT_LOG_CSV
-)
-from outreach.attachment_handler import AttachmentHandler
-from logging_module.activity_logger import ActivityLogger
-from validation.email_validator import EmailValidator, validate_email_address
+def get_gmail_credentials():
+    return config.get_gmail_credentials()
+
+def load_settings():
+    return config.load_settings()
 
 DEFAULT_SUBJECT = "Export Supply Partnership: {{product_name}} for {{company_name}}"
 DEFAULT_BODY = """Hello {{contact_name}},
@@ -156,10 +151,10 @@ class EmailSender:
     @classmethod
     def get_today_sent_count(cls) -> int:
         """Calculate total successful email sends across all campaigns today."""
-        if not SENT_LOG_CSV.exists():
+        if not config.SENT_LOG_CSV.exists():
             return 0
         try:
-            df = pd.read_csv(SENT_LOG_CSV, dtype=str)
+            df = pd.read_csv(config.SENT_LOG_CSV, dtype=str)
             if df.empty or "timestamp" not in df.columns or "status" not in df.columns:
                 return 0
             
@@ -277,7 +272,7 @@ class EmailSender:
             }
 
         # Load buyers store
-        if not BUYERS_CSV.exists():
+        if not config.BUYERS_CSV.exists():
             return {
                 "success": False,
                 "error": "NO_LEADS",
@@ -286,7 +281,7 @@ class EmailSender:
             }
 
         try:
-            df = pd.read_csv(BUYERS_CSV, dtype=str).fillna("")
+            df = pd.read_csv(config.BUYERS_CSV, dtype=str).fillna("")
         except Exception as e:
             return {
                 "success": False,
@@ -297,9 +292,22 @@ class EmailSender:
 
         # Filter by lead_ids if provided, otherwise filter all eligible leads for this product
         if lead_ids:
-            target_df = df[df["lead_id"].isin(lead_ids) | df["id"].isin(lead_ids)].copy()
+            has_lead_id = "lead_id" in df.columns
+            has_id = "id" in df.columns
+            if has_lead_id and has_id:
+                mask = df["lead_id"].isin(lead_ids) | df["id"].isin(lead_ids)
+            elif has_lead_id:
+                mask = df["lead_id"].isin(lead_ids)
+            elif has_id:
+                mask = df["id"].isin(lead_ids)
+            else:
+                mask = pd.Series([False] * len(df), index=df.index)
+            target_df = df[mask].copy()
         else:
-            target_df = df[df["product_id"] == product_id].copy()
+            if "product_id" in df.columns:
+                target_df = df[df["product_id"] == product_id].copy()
+            else:
+                target_df = df.copy()
 
         if target_df.empty:
             return {
@@ -311,7 +319,7 @@ class EmailSender:
 
         # Resolve active product details
         try:
-            from products.catalog import ProductCatalog
+            from backend.products.catalog import ProductCatalog
             prod = ProductCatalog.get_product(product_id) or ProductCatalog.get_active_product()
             prod_name = prod.get("name", "Himalayan Sound Healing Bowls")
             pdf_path = catalog_path or prod.get("catalog_path")
@@ -446,7 +454,7 @@ class EmailSender:
             if send_delay > 0:
                 time.sleep(send_delay)
 
-        df.to_csv(BUYERS_CSV, index=False)
+        df.to_csv(config.BUYERS_CSV, index=False)
 
         return {
             "success": True,

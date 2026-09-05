@@ -2,11 +2,12 @@ import sys
 from pathlib import Path
 import pytest
 
-BACKEND_DIR = Path(__file__).resolve().parent.parent / "backend"
-if str(BACKEND_DIR) not in sys.path:
-    sys.path.insert(0, str(BACKEND_DIR))
+REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
-import config
+import backend
+from backend import config
 
 AUTH_TEST_KEY = "test-auth-secret-key-12345"
 
@@ -79,6 +80,13 @@ def isolate_test_data(monkeypatch, tmp_path):
     try:
         import logging_module.activity_logger as al
         monkeypatch.setattr(al, "SENT_LOG_CSV", test_sent)
+    except Exception:
+        pass
+
+    try:
+        import leads.lead_service as ls
+        monkeypatch.setattr(ls, "BUYERS_CSV", test_buyers)
+        monkeypatch.setattr(ls, "DATA_DIR", test_data_dir)
     except Exception:
         pass
 

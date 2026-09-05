@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Optional, Tuple
 from email.mime.base import MIMEBase
 from email import encoders
-from config import COMPANY_PRESENTATION_PDF
+from backend.config import COMPANY_PRESENTATION_PDF
 
 class AttachmentHandler:
     """Handles attachment validation and MIME packaging."""

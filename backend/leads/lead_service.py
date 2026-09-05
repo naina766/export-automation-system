@@ -10,10 +10,7 @@ import uuid
 import re
 from urllib.parse import urlparse
 
-BACKEND_DIR = Path(__file__).resolve().parent.parent
-PROJECT_ROOT = BACKEND_DIR.parent
-DATA_DIR = PROJECT_ROOT / "data"
-BUYERS_CSV = DATA_DIR / "buyers.csv"
+from backend.config import DATA_DIR, BUYERS_CSV
 
 class LeadState(str, Enum):
     DISCOVERED = "discovered"

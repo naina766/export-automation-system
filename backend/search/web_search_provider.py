@@ -11,27 +11,10 @@ from pathlib import Path
 import httpx
 from typing import List, Dict, Any, Optional, Union
 
-BACKEND_DIR = Path(__file__).resolve().parent.parent
-ROOT_DIR = BACKEND_DIR.parent
-for p in [str(BACKEND_DIR), str(ROOT_DIR)]:
-    if p not in sys.path:
-        sys.path.insert(0, p)
-
-try:
-    from backend.search.base import BuyerSearchProvider
-    from backend.search.parser import parse_search_item, extract_contact_from_public_website
-    from backend.search.normalizer import normalize_lead_batch
-except ImportError:
-    try:
-        from search.base import BuyerSearchProvider
-        from search.parser import parse_search_item, extract_contact_from_public_website
-        from search.normalizer import normalize_lead_batch
-    except ImportError:
-        from .base import BuyerSearchProvider
-        from .parser import parse_search_item, extract_contact_from_public_website
-        from .normalizer import normalize_lead_batch
-
-from config import get_search_provider_config
+from backend.search.base import BuyerSearchProvider
+from backend.search.parser import parse_search_item, extract_contact_from_public_website
+from backend.search.normalizer import normalize_lead_batch
+from backend.config import get_search_provider_config
 
 class SearchProviderNotConfiguredError(Exception):
     """Raised when external search API credentials are not configured."""

@@ -5,7 +5,7 @@ Calculates executive business metrics, pipeline conversion stages, segment break
 from typing import Dict, Any, List, Optional
 from pathlib import Path
 import pandas as pd
-from config import (
+from backend.config import (
     BUYERS_CSV,
     BUSINESS_EMAILS_CSV,
     INDIVIDUAL_EMAILS_CSV,
@@ -60,7 +60,7 @@ class ReportGenerator:
 
         # Products breakdown summary
         try:
-            from products.catalog import ProductCatalog
+            from backend.products.catalog import ProductCatalog
             all_prods = ProductCatalog.list_products()
             metrics["products_summary"] = [
                 {"id": p.get("id"), "name": p.get("name"), "active": p.get("active", False)}

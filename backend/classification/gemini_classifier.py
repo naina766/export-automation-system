@@ -9,7 +9,7 @@ from typing import List, Dict, Any, Tuple, Optional, Literal
 import pandas as pd
 from pydantic import BaseModel, Field, ValidationError
 
-from config import (
+from backend.config import (
     BUYERS_CSV,
     BUSINESS_EMAILS_CSV,
     INDIVIDUAL_EMAILS_CSV,
@@ -219,7 +219,7 @@ class LeadClassifier:
 
         # Resolve active product
         try:
-            from products.catalog import ProductCatalog
+            from backend.products.catalog import ProductCatalog
             if product_id:
                 prod = ProductCatalog.get_product(product_id) or ProductCatalog.get_active_product()
             else:

@@ -6,7 +6,7 @@ import csv
 from datetime import datetime
 from typing import List, Dict, Any
 import pandas as pd
-from config import SENT_LOG_CSV
+from backend.config import SENT_LOG_CSV
 
 SENT_LOG_COLUMNS = [
     "timestamp",
