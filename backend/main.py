@@ -4,12 +4,13 @@ Live B2B lead discovery, contact validation, Gemini AI qualification, and person
 """
 import os
 import sys
+import secrets
 from pathlib import Path
 from typing import Optional, Dict, Any, List, Union
 import pandas as pd
-from fastapi import FastAPI, UploadFile, File, Form, Response, HTTPException, status
+from fastapi import FastAPI, UploadFile, File, Form, Response, HTTPException, status, Depends, Header
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 BACKEND_DIR = Path(__file__).resolve().parent
 ROOT_DIR = BACKEND_DIR.parent
@@ -60,15 +61,14 @@ app = FastAPI(
     version="2.0.0"
 )
 
-# Enable CORS for React Frontend (supports all Vercel deployments, previews & local dev)
+# Strict explicit CORS origin allowlist
 frontend_env_url = os.getenv("FRONTEND_URL", "").strip()
 allowed_origins = [
+    "https://export-automation-system-two.vercel.app",
     "http://localhost:5173",
     "http://127.0.0.1:5173",
     "http://localhost:3000",
-    "http://127.0.0.1:3000",
-    "https://export-automation-system-two.vercel.app",
-    "https://export-automation-system.onrender.com"
+    "http://127.0.0.1:3000"
 ]
 if frontend_env_url and frontend_env_url not in allowed_origins:
     allowed_origins.append(frontend_env_url)
@@ -76,15 +76,55 @@ if frontend_env_url and frontend_env_url not in allowed_origins:
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
-    allow_origin_regex=r"^(https://.*\.vercel\.app|https://.*\.onrender\.com|http://localhost(:\d+)?|http://127\.0\.0\.1(:\d+)?)$",
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-    expose_headers=["*"]
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization", "X-API-Key", "Accept"],
+    expose_headers=["Content-Disposition"]
 )
 
-
 ActivityLogger.ensure_log_file()
+
+
+def require_api_key(
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+    authorization: Optional[str] = Header(None)
+) -> bool:
+    """
+    Enforces server-side API Key authentication for mutative and sensitive endpoints.
+    Uses constant-time string comparison to prevent timing attacks.
+    """
+    expected_key = os.getenv("EXPORT_API_KEY", "").strip() or os.getenv("API_KEY", "").strip()
+    # If no server API key is configured, pass through (e.g. unconfigured local dev)
+    if not expected_key:
+        return True
+
+    provided_key = x_api_key
+    if not provided_key and authorization and authorization.startswith("Bearer "):
+        provided_key = authorization[7:].strip()
+
+    if not provided_key or not secrets.compare_digest(provided_key, expected_key):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required",
+            headers={"WWW-Authenticate": "ApiKey"}
+        )
+
+    return True
+
+
+def _validate_safe_catalog_path(path_val: Optional[str]) -> Optional[str]:
+    """Validates that a catalog path is a safe relative path to a PDF file."""
+    if path_val:
+        clean = str(path_val).strip()
+        if Path(clean).is_absolute():
+            raise ValueError("catalog_path must not be an absolute filesystem path")
+        norm = clean.replace("\\", "/").split("/")
+        if ".." in norm or "." in norm[:-1]:
+            raise ValueError("catalog_path must not contain directory traversal")
+        if not clean.lower().endswith(".pdf"):
+            raise ValueError("catalog_path must point to a .pdf file")
+    return path_val
+
 
 # Pydantic Request Models
 class ProductCreateRequest(BaseModel):
@@ -99,6 +139,11 @@ class ProductCreateRequest(BaseModel):
     catalog_path: Optional[str] = "assets/company_presentation.pdf"
     active: Optional[bool] = False
 
+    @field_validator("catalog_path")
+    @classmethod
+    def validate_catalog(cls, v):
+        return _validate_safe_catalog_path(v)
+
 class ProductUpdateRequest(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
@@ -109,6 +154,11 @@ class ProductUpdateRequest(BaseModel):
     email_body_template: Optional[str] = None
     catalog_path: Optional[str] = None
     active: Optional[bool] = None
+
+    @field_validator("catalog_path")
+    @classmethod
+    def validate_catalog(cls, v):
+        return _validate_safe_catalog_path(v)
 
 class SearchRequest(BaseModel):
     product_id: Optional[str] = Field(default=None)
@@ -216,7 +266,7 @@ async def list_products():
         "total": len(products)
     }
 
-@app.post("/api/products", status_code=status.HTTP_201_CREATED)
+@app.post("/api/products", status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_api_key)])
 async def create_product(payload: ProductCreateRequest):
     """Add a new product to the export catalog."""
     try:
@@ -231,7 +281,7 @@ async def create_product(payload: ProductCreateRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to create product: {str(e)}")
 
-@app.put("/api/products/{product_id}")
+@app.put("/api/products/{product_id}", dependencies=[Depends(require_api_key)])
 async def update_product_endpoint(product_id: str, payload: ProductUpdateRequest):
     """Update an existing product configuration."""
     updated = ProductCatalog.update_product(product_id, payload.model_dump(exclude_unset=True))
@@ -243,7 +293,7 @@ async def update_product_endpoint(product_id: str, payload: ProductUpdateRequest
         "product": updated
     }
 
-@app.delete("/api/products/{product_id}")
+@app.delete("/api/products/{product_id}", dependencies=[Depends(require_api_key)])
 async def delete_product_endpoint(product_id: str):
     """Delete a product from catalog."""
     deleted = ProductCatalog.delete_product(product_id)
@@ -255,7 +305,7 @@ async def delete_product_endpoint(product_id: str):
         "active_product": ProductCatalog.get_active_product()
     }
 
-@app.post("/api/products/{product_id}/activate")
+@app.post("/api/products/{product_id}/activate", dependencies=[Depends(require_api_key)])
 async def activate_product_endpoint(product_id: str):
     """Set the specified product as globally active."""
     activated = ProductCatalog.set_active_product(product_id)
@@ -479,8 +529,8 @@ async def get_sample_workflow_buyers(product_id: Optional[str] = None):
         "results": sample_records
     }
 
-@app.post("/api/extraction")
-@app.post("/api/leads/enrich")
+@app.post("/api/extraction", dependencies=[Depends(require_api_key)])
+@app.post("/api/leads/enrich", dependencies=[Depends(require_api_key)])
 async def retry_lead_enrichment(payload: EnrichLeadRequest):
     """Re-attempts email extraction from a buyer's company website with SSRF protection."""
     target_website = (payload.website or "").strip()
@@ -530,7 +580,7 @@ async def retry_lead_enrichment(payload: EnrichLeadRequest):
         "message": "Email could not be found on public website. You can enter it manually."
     }
 
-@app.post("/api/leads/update")
+@app.post("/api/leads/update", dependencies=[Depends(require_api_key)])
 async def update_lead_endpoint(payload: UpdateLeadRequest):
     """Manually updates a buyer's contact details and re-validates email format."""
     val_res = validate_email_address(payload.email.strip())
@@ -622,7 +672,7 @@ async def get_single_lead_endpoint(lead_id: str):
         raise HTTPException(status_code=404, detail=f"Lead with id '{lead_id}' not found.")
     return {"success": True, "lead": lead}
 
-@app.patch("/api/leads/{lead_id}")
+@app.patch("/api/leads/{lead_id}", dependencies=[Depends(require_api_key)])
 async def patch_single_lead_endpoint(lead_id: str, payload: Dict[str, Any]):
     """Partially update lead attributes and recalculate validation state."""
     # If email is modified, revalidate
@@ -639,7 +689,7 @@ async def patch_single_lead_endpoint(lead_id: str, payload: Dict[str, Any]):
         raise HTTPException(status_code=404, detail=f"Lead with id '{lead_id}' not found.")
     return {"success": True, "message": "Lead updated successfully.", "lead": updated}
 
-@app.delete("/api/leads/{lead_id}")
+@app.delete("/api/leads/{lead_id}", dependencies=[Depends(require_api_key)])
 async def delete_single_lead_endpoint(lead_id: str):
     """Remove a buyer lead from storage."""
     deleted = LeadService.delete_lead(lead_id)
@@ -648,8 +698,8 @@ async def delete_single_lead_endpoint(lead_id: str):
     return {"success": True, "message": "Lead deleted successfully."}
 
 
-@app.post("/api/discovery")
-@app.post("/api/search")
+@app.post("/api/discovery", dependencies=[Depends(require_api_key)])
+@app.post("/api/search", dependencies=[Depends(require_api_key)])
 async def discover_buyers_endpoint(payload: SearchRequest):
 
     """
@@ -789,7 +839,7 @@ async def discover_buyers_endpoint(payload: SearchRequest):
 # ==========================================
 # 5. UPLOAD & INGESTION
 # ==========================================
-@app.post("/api/upload")
+@app.post("/api/upload", dependencies=[Depends(require_api_key)])
 async def upload_leads_csv(file: UploadFile = File(...)):
     if not file.filename.lower().endswith(".csv"):
         raise HTTPException(
@@ -817,9 +867,9 @@ async def upload_leads_csv(file: UploadFile = File(...)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to process CSV: {str(e)}")
 
-@app.post("/api/leads/validate")
-@app.post("/api/validation")
-@app.post("/api/validate")
+@app.post("/api/leads/validate", dependencies=[Depends(require_api_key)])
+@app.post("/api/validation", dependencies=[Depends(require_api_key)])
+@app.post("/api/validate", dependencies=[Depends(require_api_key)])
 async def validate_single_email_endpoint(
     payload: Optional[EmailValidateRequest] = None,
     email: Optional[str] = Form(default=None)
@@ -872,8 +922,8 @@ async def get_classification_data(product_id: Optional[str] = None):
         "individual_leads": ind_leads
     }
 
-@app.post("/api/leads/classify")
-@app.post("/api/classify")
+@app.post("/api/leads/classify", dependencies=[Depends(require_api_key)])
+@app.post("/api/classify", dependencies=[Depends(require_api_key)])
 async def run_classification(payload: Optional[ClassifyRequest] = None):
 
     pid = payload.product_id if payload else None
@@ -902,9 +952,9 @@ async def list_campaigns_endpoint(product_id: Optional[str] = None):
     metrics = ReportGenerator.get_campaign_metrics(product_id=product_id)
     return {"success": True, "campaigns": metrics}
 
-@app.post("/api/campaigns")
-@app.post("/api/campaign")
-@app.post("/api/send")
+@app.post("/api/campaigns", dependencies=[Depends(require_api_key)])
+@app.post("/api/campaign", dependencies=[Depends(require_api_key)])
+@app.post("/api/send", dependencies=[Depends(require_api_key)])
 async def send_campaign(payload: SendCampaignRequest):
 
     # 1. Block demo data from entering live outreach
@@ -1017,7 +1067,7 @@ async def send_campaign(payload: SendCampaignRequest):
         "results": results
     }
 
-@app.post("/api/send/test")
+@app.post("/api/send/test", dependencies=[Depends(require_api_key)])
 async def send_test_email(payload: TestEmailRequest):
     """Dispatches a real single test email via Gmail SMTP for verification."""
     val_res = validate_email_address(payload.recipient_email)
@@ -1141,7 +1191,7 @@ async def get_settings():
         "settings": settings
     }
 
-@app.post("/api/settings")
+@app.post("/api/settings", dependencies=[Depends(require_api_key)])
 async def update_settings(payload: SettingsUpdateRequest):
     current = load_settings()
     
@@ -1165,7 +1215,7 @@ async def update_settings(payload: SettingsUpdateRequest):
         "settings": current
     }
 
-@app.post("/api/settings/test-smtp")
+@app.post("/api/settings/test-smtp", dependencies=[Depends(require_api_key)])
 async def test_smtp_connection():
     """Performs live SMTP handshake and authentication with Gmail without dispatching emails."""
     settings = load_settings()
@@ -1194,7 +1244,7 @@ async def test_smtp_connection():
             detail=f"SMTP Connection Failed: {str(e)}"
         )
 
-@app.post("/api/settings/test-gemini")
+@app.post("/api/settings/test-gemini", dependencies=[Depends(require_api_key)])
 async def test_gemini_connection():
     """Validates Gemini AI connection and model readiness."""
     gemini_key, gemini_model = get_gemini_config()
@@ -1228,7 +1278,7 @@ async def test_gemini_connection():
             detail=f"Gemini API connection error: {str(e)}"
         )
 
-@app.post("/api/settings/test-search")
+@app.post("/api/settings/test-search", dependencies=[Depends(require_api_key)])
 async def test_search_connection():
     """Validates Search Provider configuration."""
     search_cfg = get_search_provider_config()

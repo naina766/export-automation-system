@@ -1,7 +1,7 @@
 {
-  "SEARCH_KEYWORD": "Himalayan Sound Healing",
-  "DAILY_SEND_LIMIT": 20,
-  "SEND_DELAY": 1,
+  "SEARCH_KEYWORD": "Himalayan Sound Healing Bowls",
+  "DAILY_SEND_LIMIT": 100,
+  "SEND_DELAY": 2,
   "MAX_EMAILS_PER_RUN": 25,
   "SMTP_HOST": "smtp.gmail.com",
   "SMTP_PORT": 587

@@ -57,7 +57,17 @@ def load_settings() -> dict:
 def save_settings(settings: dict) -> None:
     """Save non-secret settings to data/settings.json."""
     # Ensure secrets and legacy keys are never stored
-    safe_settings = {k: v for k, v in settings.items() if k not in ["GMAIL_APP_PASSWORD", "GEMINI_API_KEY", "SEARCH_API_KEY", "EMAIL_MODE"]}
+    safe_settings = {
+        k: v for k, v in settings.items()
+        if k not in [
+            "GMAIL_APP_PASSWORD",
+            "GEMINI_API_KEY",
+            "SEARCH_API_KEY",
+            "EXPORT_API_KEY",
+            "API_KEY",
+            "EMAIL_MODE"
+        ]
+    }
     with open(SETTINGS_JSON, "w", encoding="utf-8") as f:
         json.dump(safe_settings, f, indent=2)
 

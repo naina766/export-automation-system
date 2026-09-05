@@ -306,4 +306,94 @@ def test_campaigns_list_endpoint():
     assert data["success"] is True
     assert "campaigns" in data
 
+def test_api_key_auth_protected_without_key(monkeypatch):
+    monkeypatch.setenv("EXPORT_API_KEY", "super_secret_test_key_12345")
+    # Mutative endpoint without header should return 401
+    response = client.post("/api/products", json={"name": "Test Protected Product"})
+    assert response.status_code == 401
+    assert response.json()["detail"] == "Authentication required"
+
+def test_api_key_auth_protected_with_wrong_key(monkeypatch):
+    monkeypatch.setenv("EXPORT_API_KEY", "super_secret_test_key_12345")
+    response = client.post(
+        "/api/products",
+        json={"name": "Test Protected Product"},
+        headers={"X-API-Key": "wrong_key_xyz"}
+    )
+    assert response.status_code == 401
+    assert response.json()["detail"] == "Authentication required"
+
+def test_api_key_auth_protected_with_valid_key(monkeypatch):
+    monkeypatch.setenv("EXPORT_API_KEY", "super_secret_test_key_12345")
+    response = client.post(
+        "/api/products",
+        json={
+            "name": "Auth Test Gong",
+            "catalog_path": "assets/company_presentation.pdf"
+        },
+        headers={"X-API-Key": "super_secret_test_key_12345"}
+    )
+    assert response.status_code == 201
+    data = response.json()
+    assert data["success"] is True
+    prod_id = data["product"]["id"]
+    # Clean up
+    client.delete(f"/api/products/{prod_id}", headers={"X-API-Key": "super_secret_test_key_12345"})
+
+def test_api_key_auth_bearer_token_support(monkeypatch):
+    monkeypatch.setenv("EXPORT_API_KEY", "super_secret_test_key_12345")
+    response = client.post(
+        "/api/settings",
+        json={"SEND_DELAY": 2},
+        headers={"Authorization": "Bearer super_secret_test_key_12345"}
+    )
+    assert response.status_code == 200
+    assert response.json()["success"] is True
+
+def test_catalog_path_traversal_rejected_in_request():
+    # 1. Directory traversal in ProductCreateRequest
+    bad_traversal_payload = {
+        "name": "Exploit Product",
+        "catalog_path": "../../etc/passwd"
+    }
+    res = client.post("/api/products", json=bad_traversal_payload)
+    assert res.status_code == 422
+
+    # 2. Absolute path in ProductCreateRequest
+    bad_abs_payload = {
+        "name": "Exploit Product",
+        "catalog_path": "/etc/passwd"
+    }
+    res_abs = client.post("/api/products", json=bad_abs_payload)
+    assert res_abs.status_code == 422
+
+    # 3. Non-PDF file in ProductCreateRequest
+    bad_ext_payload = {
+        "name": "Exploit Product",
+        "catalog_path": "assets/.env"
+    }
+    res_ext = client.post("/api/products", json=bad_ext_payload)
+    assert res_ext.status_code == 422
+
+def test_attachment_handler_traversal_safety():
+    from backend.outreach.attachment_handler import AttachmentHandler
+
+    # 1. Traversals should be strictly rejected (returns None)
+    assert AttachmentHandler.get_attachment_path("../../.env") is None
+    assert AttachmentHandler.get_attachment_path("../../../etc/passwd") is None
+
+    # 2. Absolute paths should be strictly rejected (returns None)
+    assert AttachmentHandler.get_attachment_path("C:\\Windows\\System32\\calc.exe") is None
+    assert AttachmentHandler.get_attachment_path("/etc/passwd") is None
+
+    # 3. Non-PDF files should be rejected (returns None)
+    assert AttachmentHandler.get_attachment_path("assets/some_script.sh") is None
+
+    # 4. Valid catalog presentation path should resolve properly
+    valid_res = AttachmentHandler.get_attachment_path("company_presentation.pdf")
+    if valid_res is not None:
+        assert valid_res.name.endswith(".pdf")
+        assert valid_res.exists()
+
+
 

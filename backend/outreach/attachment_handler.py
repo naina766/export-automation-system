@@ -13,25 +13,46 @@ class AttachmentHandler:
 
     @staticmethod
     def get_attachment_path(file_path: Optional[str] = None) -> Optional[Path]:
-        """Resolves relative or absolute catalog PDF path."""
+        """
+        Safely resolves catalog PDF path strictly within approved catalog assets directories.
+        Rejects absolute paths, directory traversal ('..'), symlink escapes, and non-PDF files.
+        """
         if not file_path:
-            return COMPANY_PRESENTATION_PDF if COMPANY_PRESENTATION_PDF.exists() else None
+            return COMPANY_PRESENTATION_PDF if (COMPANY_PRESENTATION_PDF.exists() and COMPANY_PRESENTATION_PDF.is_file()) else None
         
-        p = Path(file_path)
-        if p.is_absolute() and p.exists():
-            return p
+        clean_path_str = str(file_path).strip()
+        p = Path(clean_path_str)
         
-        # Check relative to backend or project root
-        proj_root = Path(__file__).resolve().parent.parent.parent
-        resolved = proj_root / file_path
-        if resolved.exists():
-            return resolved
+        # 1. Reject absolute paths
+        if p.is_absolute():
+            return None
         
-        backend_resolved = Path(__file__).resolve().parent.parent / file_path
-        if backend_resolved.exists():
-            return backend_resolved
-            
-        return COMPANY_PRESENTATION_PDF if COMPANY_PRESENTATION_PDF.exists() else None
+        # 2. Reject directory traversal
+        normalized_parts = clean_path_str.replace("\\", "/").split("/")
+        if ".." in normalized_parts or "." in normalized_parts[:-1]:
+            return None
+        
+        # 3. Reject non-PDF extensions
+        if p.suffix.lower() != ".pdf":
+            return None
+        
+        # 4. Approved root directories
+        backend_dir = Path(__file__).resolve().parent.parent
+        project_root = backend_dir.parent
+        approved_roots = [
+            (project_root / "assets").resolve(),
+            (backend_dir / "assets").resolve()
+        ]
+        
+        for root in approved_roots:
+            try:
+                candidate = (root / p.name if not p.parent or p.parent == Path(".") else root / p).resolve()
+                if candidate.is_relative_to(root) and candidate.exists() and candidate.is_file():
+                    return candidate
+            except (ValueError, Exception):
+                continue
+                
+        return COMPANY_PRESENTATION_PDF if (COMPANY_PRESENTATION_PDF.exists() and COMPANY_PRESENTATION_PDF.is_file()) else None
 
     @staticmethod
     def get_presentation_status() -> Tuple[bool, str, int]:

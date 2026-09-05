@@ -32,10 +32,10 @@ export function formatBusinessError(err, fallback = "Something went wrong. Pleas
   // HTTP status code handling
   const status = err.response?.status;
   if (status === 401) {
-    return "Your connection needs attention. Please check Settings.";
+    return "Authentication required. Please check your application configuration.";
   }
   if (status === 403) {
-    return "Access to this service is restricted. Please check your credentials in Settings.";
+    return "Access to this service is restricted. Please check your application configuration.";
   }
   if (status === 404) {
     return "The requested information could not be found.";
