@@ -82,9 +82,9 @@ def is_safe_url(url: str) -> bool:
                 ip_obj.is_private
                 or ip_obj.is_loopback
                 or ip_obj.is_link_local
-                or ip_obj.is_reserved
+                or ip_obj.is_unspecified
                 or ip_obj.is_multicast
-                or str(ip_obj) == "169.254.169.254"
+                or str(ip_obj) in ["169.254.169.254", "0.0.0.0", "::", "127.0.0.1"]
             ):
                 return False
             return True
@@ -102,9 +102,9 @@ def is_safe_url(url: str) -> bool:
                     ip_obj.is_private
                     or ip_obj.is_loopback
                     or ip_obj.is_link_local
-                    or ip_obj.is_reserved
+                    or ip_obj.is_unspecified
                     or ip_obj.is_multicast
-                    or str(ip_obj) == "169.254.169.254"
+                    or str(ip_obj) in ["169.254.169.254", "0.0.0.0", "::", "127.0.0.1"]
                 ):
                     return False
         except (socket.gaierror, socket.herror, TimeoutError, OSError):
