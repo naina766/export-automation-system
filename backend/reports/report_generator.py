@@ -165,6 +165,7 @@ class ReportGenerator:
 
                 if not sent_df.empty:
                     prod_successful = 0
+                    prod_bounced = 0
                     prod_failed = 0
                     prod_skipped = 0
                     test_sends = 0
@@ -174,6 +175,7 @@ class ReportGenerator:
 
                     for _, row in sent_df.iterrows():
                         status = str(row.get("status", "")).strip().upper()
+                        delivery_st = str(row.get("delivery_status", "")).strip().upper()
                         mode = str(row.get("mode", "")).strip().upper()
                         classification = str(row.get("classification", "")).strip().lower()
                         campaign = str(row.get("campaign", "")).strip()
@@ -189,6 +191,14 @@ class ReportGenerator:
                         rec = row.to_dict()
                         rec["is_test"] = is_test
                         rec["event_type"] = "TEST" if is_test else "CAMPAIGN"
+                        if not rec.get("delivery_status"):
+                            rec["delivery_status"] = "SMTP_ACCEPTED" if status == "SENT" else "FAILED"
+                        if not rec.get("delivery_note"):
+                            rec["delivery_note"] = (
+                                "Accepted by Gmail SMTP for transmission; recipient delivery not yet confirmed."
+                                if status == "SENT" else row.get("error", "Dispatch failed")
+                            )
+
                         annotated_logs.append(rec)
 
                         if is_test:
@@ -196,8 +206,13 @@ class ReportGenerator:
                                 test_sends += 1
                             test_attempts += 1
                         else:
-                            if status == "SENT":
+                            if status == "SENT" or delivery_st == "SMTP_ACCEPTED":
                                 prod_successful += 1
+                                if campaign:
+                                    prod_campaigns.add(campaign)
+                            elif delivery_st == "BOUNCED":
+                                prod_bounced += 1
+                                prod_failed += 1
                                 if campaign:
                                     prod_campaigns.add(campaign)
                             elif status == "FAILED":
@@ -210,11 +225,15 @@ class ReportGenerator:
                     prod_attempted = prod_successful + prod_failed
                     metrics["emails_attempted"] = prod_attempted
                     metrics["successful_sends"] = prod_successful
+                    metrics["emails_submitted"] = prod_successful
+                    metrics["emails_bounced"] = prod_bounced
                     metrics["failed_sends"] = prod_failed
                     metrics["skipped_leads"] = prod_skipped
                     metrics["test_sends"] = test_sends
                     metrics["test_attempts"] = test_attempts
                     metrics["campaigns_count"] = len(prod_campaigns)
+                    metrics["delivery_confirmed"] = 0
+                    metrics["delivery_note"] = "SMTP submission verified; recipient delivery unconfirmed without DSN/IMAP integration."
 
                     annotated_logs.reverse()
                     metrics["recent_activity"] = annotated_logs[:40]
@@ -235,6 +254,8 @@ class ReportGenerator:
         metrics["valid_contact_emails"] = metrics["valid_emails"]
         metrics["ai_qualified_buyers"] = metrics.get("qualified_buyers", metrics["business_leads"])
         metrics["emails_sent"] = metrics["successful_sends"]
+        metrics["emails_submitted"] = metrics.get("emails_submitted", metrics["successful_sends"])
+        metrics["emails_bounced"] = metrics.get("emails_bounced", 0)
         metrics["emails_failed"] = metrics["failed_sends"]
         metrics["duplicates_skipped"] = metrics["duplicates"]
         metrics["countries_covered"] = metrics["countries_count"]

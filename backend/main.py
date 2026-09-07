@@ -740,6 +740,7 @@ async def create_buyer_endpoint(payload: CreateBuyerRequest):
         "syntax_valid": "True",
         "valid": "True",
         "is_duplicate": "False",
+        "already_contacted": "False",
         "qualification_status": "qualified",
         "ai_score": "90",
         "ai_confidence": "1.0",
@@ -747,14 +748,36 @@ async def create_buyer_endpoint(payload: CreateBuyerRequest):
         "priority": "high",
         "outreach_status": "eligible",
         "is_demo": "False",
+        "delivery_status": "UNKNOWN",
+        "delivery_note": "",
+        "bounce_reason": "",
+        "failure_reason": "",
         "discovered_at": datetime.now(timezone.utc).isoformat()
     }
 
     created = LeadService.create_lead(lead_record)
+    print(f"[ADD BUYER] lead_id={lead_id} email={email} company={company_name} contact={contact_name}")
     return {
         "success": True,
         "message": "Buyer added successfully and is campaign eligible.",
         "lead": created
+    }
+
+@app.get("/api/debug/lead/{lead_id}")
+async def debug_lead_endpoint(lead_id: str):
+    """Safe development diagnostic endpoint returning non-secret lead details."""
+    lead = LeadService.get_lead(lead_id)
+    if not lead:
+        raise HTTPException(status_code=404, detail="Lead not found")
+    return {
+        "lead_id": lead.get("lead_id") or lead.get("id"),
+        "email": lead.get("email"),
+        "company_name": lead.get("company_name") or lead.get("company"),
+        "contact_name": lead.get("contact_name") or lead.get("buyer_name"),
+        "product_id": lead.get("product_id"),
+        "outreach_status": lead.get("outreach_status"),
+        "delivery_status": lead.get("delivery_status"),
+        "already_contacted": lead.get("already_contacted")
     }
 
 @app.get("/api/leads/{lead_id}")
@@ -1102,7 +1125,7 @@ async def send_campaign(payload: SendCampaignRequest):
         )
 
         pdf_att = pdf_path if payload.attach_presentation else None
-        success, error_msg = EmailSender.send_smtp_email(
+        send_res = EmailSender.send_smtp_email(
             to_email=payload.custom_email.strip(),
             subject=clean_sub,
             body_text=clean_body,
@@ -1110,27 +1133,49 @@ async def send_campaign(payload: SendCampaignRequest):
             require_attachment=payload.attach_presentation
         )
 
+        if isinstance(send_res, tuple) and not hasattr(send_res, "success"):
+            success = bool(send_res[0])
+            error_msg = str(send_res[1]) if len(send_res) > 1 else ""
+            delivery_st = "SMTP_ACCEPTED" if success else "FAILED"
+            delivery_nt = "Accepted by Gmail SMTP for transmission." if success else str(error_msg)
+        else:
+            success = getattr(send_res, "success", bool(send_res))
+            error_msg = getattr(send_res, "message", "")
+            delivery_st = getattr(send_res, "delivery_status", "SMTP_ACCEPTED" if success else "FAILED")
+            delivery_nt = getattr(send_res, "delivery_note", "Accepted by Gmail SMTP for transmission." if success else str(error_msg))
+
         status_str = "SENT" if success else "FAILED"
-        ActivityLogger.log_activity(
+        ActivityLogger.log_send_event(
             buyer_name=payload.custom_buyer_name or (f"{payload.custom_company_name} Team" if payload.custom_company_name else "Custom Recipient"),
             company=payload.custom_company_name or "Custom Organization",
             email=payload.custom_email.strip(),
             classification="custom",
             mode="SMTP",
             status=status_str,
+            delivery_status=delivery_st,
+            delivery_note=delivery_nt,
+            failure_reason=error_msg if not success else "",
             error=error_msg if not success else "",
             campaign=prod_name,
             product_id=prod_id
         )
 
         att_filename = Path(pdf_path).name if (payload.attach_presentation and success) else None
+        bounced_count = 1 if (not success and delivery_st == "BOUNCED") else 0
+        failed_count = 0 if success else 1
 
         return {
             "success": success,
+            "attempted": 1,
+            "smtp_accepted": 1 if success else 0,
             "dispatched": 1 if success else 0,
-            "failed": 0 if success else 1,
+            "failed": failed_count,
+            "bounced": bounced_count,
+            "delivery_confirmed": 0,
             "recipient": payload.custom_email.strip(),
             "contact_name": payload.custom_buyer_name or (f"{payload.custom_company_name} Team" if payload.custom_company_name else "Company Team"),
+            "delivery_status": delivery_st,
+            "delivery_note": delivery_nt,
             "attachment": {
                 "attached": bool(payload.attach_presentation and success),
                 "filename": att_filename
@@ -1138,13 +1183,20 @@ async def send_campaign(payload: SendCampaignRequest):
             "error": error_msg if not success else None,
             "results": {
                 "audience": "custom",
+                "attempted": 1,
+                "smtp_accepted": 1 if success else 0,
                 "sent_count": 1 if success else 0,
-                "failed_count": 0 if success else 1,
+                "failed_count": failed_count,
+                "bounced_count": bounced_count,
+                "delivery_confirmed": 0,
                 "results": [{
+                    "lead_id": "custom",
                     "recipient": payload.custom_email.strip(),
                     "company_name": payload.custom_company_name or "Custom Organization",
                     "contact_name": payload.custom_buyer_name or (f"{payload.custom_company_name} Team" if payload.custom_company_name else "Company Team"),
-                    "status": "sent" if success else "failed",
+                    "status": delivery_st,
+                    "delivery_status": delivery_st,
+                    "delivery_note": delivery_nt,
                     "error": error_msg if not success else None,
                     "attachment": {
                         "attached": bool(payload.attach_presentation and success),
@@ -1177,7 +1229,14 @@ async def send_campaign(payload: SendCampaignRequest):
         )
 
     return {
-        "success": results.get("dispatched", 0) > 0 or (results.get("total_targeted", 0) == 0 and results.get("skipped", 0) > 0),
+        "success": results.get("smtp_accepted", results.get("dispatched", 0)) > 0 or (results.get("total_targeted", 0) == 0 and results.get("skipped", 0) > 0),
+        "attempted": results.get("attempted", results.get("total_targeted", 0)),
+        "smtp_accepted": results.get("smtp_accepted", results.get("dispatched", 0)),
+        "dispatched": results.get("dispatched", 0),
+        "failed": results.get("failed", 0),
+        "bounced": results.get("bounced", 0),
+        "delivery_confirmed": 0,
+        "skipped": results.get("skipped", 0),
         "results": results
     }
 
@@ -1218,7 +1277,7 @@ async def send_test_email(payload: TestEmailRequest):
     )
 
     pdf_att = pdf_path if payload.attach_presentation else None
-    success, error_msg = EmailSender.send_smtp_email(
+    send_res = EmailSender.send_smtp_email(
         to_email=payload.recipient_email.strip(),
         subject=clean_sub,
         body_text=clean_body,
@@ -1226,31 +1285,62 @@ async def send_test_email(payload: TestEmailRequest):
         require_attachment=payload.attach_presentation
     )
 
+    if isinstance(send_res, tuple) and not hasattr(send_res, "success"):
+        success = bool(send_res[0])
+        error_msg = str(send_res[1]) if len(send_res) > 1 else ""
+        delivery_st = "SMTP_ACCEPTED" if success else "FAILED"
+        delivery_nt = "Accepted by Gmail SMTP for transmission." if success else str(error_msg)
+    else:
+        success = getattr(send_res, "success", bool(send_res))
+        error_msg = getattr(send_res, "message", "")
+        delivery_st = getattr(send_res, "delivery_status", "SMTP_ACCEPTED" if success else "FAILED")
+        delivery_nt = getattr(send_res, "delivery_note", "Accepted by Gmail SMTP for transmission." if success else str(error_msg))
+
     status_str = "SENT" if success else "FAILED"
-    ActivityLogger.log_activity(
+    ActivityLogger.log_send_event(
         buyer_name=payload.recipient_name or (f"{payload.company_name} Team" if payload.company_name else "Test Recipient"),
         company=payload.company_name or "Test Organization",
         email=payload.recipient_email.strip(),
         classification="custom",
         mode="SMTP_TEST",
         status=status_str,
+        delivery_status=delivery_st,
+        delivery_note=delivery_nt,
+        failure_reason=error_msg if not success else "",
         error=error_msg if not success else "",
         campaign=f"[TEST] {prod_name}",
         product_id=prod_id
     )
 
     att_filename = Path(pdf_path).name if (payload.attach_presentation and success) else None
+    bounced_count = 1 if (not success and delivery_st == "BOUNCED") else 0
+    failed_count = 0 if success else 1
 
     return {
         "success": success,
+        "attempted": 1,
+        "smtp_accepted": 1 if success else 0,
         "dispatched": 1 if success else 0,
+        "failed": failed_count,
+        "bounced": bounced_count,
+        "delivery_confirmed": 0,
         "recipient": payload.recipient_email.strip(),
         "contact_name": payload.recipient_name or (f"{payload.company_name} Team" if payload.company_name else "Test Recipient"),
+        "delivery_status": delivery_st,
+        "delivery_note": delivery_nt,
         "attachment": {
             "attached": bool(payload.attach_presentation and success),
             "filename": att_filename
         },
-        "error": error_msg if not success else None
+        "error": error_msg if not success else None,
+        "results": [{
+            "lead_id": "test",
+            "recipient": payload.recipient_email.strip(),
+            "status": delivery_st,
+            "delivery_status": delivery_st,
+            "delivery_note": delivery_nt,
+            "error": error_msg if not success else None
+        }]
     }
 
 

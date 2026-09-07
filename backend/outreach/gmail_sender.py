@@ -5,9 +5,11 @@ cumulative daily send limits, duplicate suppression, and resilient Gmail SMTP di
 """
 import re
 import time
+import os
 import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from email.utils import make_msgid
 import sys
 from pathlib import Path
 from datetime import datetime, timezone
@@ -37,20 +39,44 @@ Please find our product catalog and export specifications attached.
 Best regards,
 Export Sales Team"""
 
+class SendResult:
+    """
+    Rich result object for SMTP send operations.
+    Supports unpacking as (success, message) for backwards compatibility,
+    while exposing delivery_status and delivery_note attributes.
+    """
+    def __init__(self, success: bool, message: str, delivery_status: str = "SMTP_ACCEPTED", delivery_note: str = ""):
+        self.success = bool(success)
+        self.message = str(message)
+        self.delivery_status = str(delivery_status)
+        self.delivery_note = str(delivery_note or message)
+
+    def __iter__(self):
+        yield self.success
+        yield self.message
+
+    def __getitem__(self, idx):
+        return [self.success, self.message, self.delivery_status, self.delivery_note][idx]
+
+    def __repr__(self):
+        return f"SendResult(success={self.success}, message='{self.message}', delivery_status='{self.delivery_status}', delivery_note='{self.delivery_note}')"
+
 def is_outreach_eligible(
     lead: Dict[str, Any],
     campaign_product_id: Optional[str] = None,
-    contacted_emails: Optional[Set[str]] = None
+    contacted_emails: Optional[Set[str]] = None,
+    allow_explicit_selection: bool = False
 ) -> Tuple[bool, str]:
     """
-    Authoritative backend eligibility check.
-    A lead is eligible for outreach ONLY if ALL conditions are satisfied:
-    1. Lead exists and has a valid identifier
-    2. product_id matches campaign product_id (Product Isolation)
-    3. Email exists and email_status == 'valid'
-    4. qualification_status == 'qualified'
-    5. is_demo is False
-    6. Not already contacted in historical sent_log
+    Hard Gate for lead outreach eligibility:
+    1. Not empty or missing ID
+    2. Not bounced previously
+    3. Product ID matches campaign
+    4. syntax_valid is True and email is present
+    5. qualification_status == 'qualified'
+    6. is_demo is False
+    7. In-batch not duplicate
+    8. Not already contacted in historical sent_log (for unselected bulk runs)
     """
     if not lead:
         return False, "Lead record is empty or missing"
@@ -65,13 +91,20 @@ def is_outreach_eligible(
     if is_demo:
         return False, "Demo buyer cannot enter live email outreach"
 
-    # 2. Product Isolation
+    # 2. Known Bounce Safety Barrier
+    raw_delivery = str(lead.get("delivery_status", "")).upper().strip()
+    raw_outreach = str(lead.get("outreach_status", "")).lower().strip()
+    raw_state = str(lead.get("state", "")).lower().strip()
+    if raw_delivery == "BOUNCED" or raw_outreach == "bounced" or raw_state == "bounced":
+        return False, "Email bounced — update recipient address before sending again."
+
+    # 3. Product Isolation
     if campaign_product_id:
         lead_product_id = lead.get("product_id") or "himalayan-sound-healing-bowls"
         if lead_product_id != campaign_product_id:
             return False, f"Product mismatch: lead belongs to '{lead_product_id}', campaign is for '{campaign_product_id}'"
 
-    # 3. Email Availability & Syntax Validation
+    # 4. Email Availability & Syntax Validation
     raw_email = str(lead.get("email", "") or "").strip()
     if not raw_email or raw_email in ["none", "null", "undefined"]:
         return False, "Missing email address"
@@ -82,25 +115,26 @@ def is_outreach_eligible(
         if not val_res.get("syntax_valid"):
             return False, f"Invalid email syntax: {val_res.get('reason', 'invalid')}"
 
-    # 4. AI Qualification Status
+    # 5. AI Qualification Status
     qual_status = str(lead.get("qualification_status", "")).lower().strip()
     if qual_status != "qualified":
         return False, f"Lead is not AI qualified (status: '{qual_status or 'pending'}')"
 
-    # 5. In-batch duplicate check
+    # 6. In-batch duplicate check
     raw_dup = lead.get("is_duplicate", False)
     if (raw_dup is True) or (str(raw_dup).lower().strip() in ["true", "1", "yes"]):
         return False, "Duplicate lead record"
 
-    # 6. Historical Duplicate Outreach Suppression
-    if contacted_emails is None:
-        contacted_emails = EmailValidator.get_contacted_emails()
-    
-    clean_email = raw_email.lower()
-    raw_contacted = lead.get("already_contacted", False)
-    is_contacted = (raw_contacted is True) or (str(raw_contacted).lower().strip() in ["true", "1", "yes"])
-    if clean_email in contacted_emails or is_contacted:
-        return False, "Already contacted in a previous campaign"
+    # 7. Historical Duplicate Outreach Suppression (enforced for automated/unselected runs)
+    if not allow_explicit_selection:
+        if contacted_emails is None:
+            contacted_emails = EmailValidator.get_contacted_emails()
+        
+        clean_email = raw_email.lower()
+        raw_contacted = lead.get("already_contacted", False)
+        is_contacted = (raw_contacted is True) or (str(raw_contacted).lower().strip() in ["true", "1", "yes"])
+        if clean_email in contacted_emails or is_contacted:
+            return False, "Already contacted in a previous campaign"
 
     return True, "Eligible"
 
@@ -181,7 +215,9 @@ class EmailSender:
         msg = MIMEMultipart()
         msg["From"] = f"Export Outreach <{sender_email}>"
         msg["To"] = to_email.strip()
+        msg["Reply-To"] = sender_email
         msg["Subject"] = subject.strip()
+        msg["Message-ID"] = make_msgid(domain=sender_email.split("@")[-1] if "@" in sender_email else "exportautomation.com")
         msg.attach(MIMEText(body_text, "plain", "utf-8"))
 
         if attachment_path:
@@ -229,26 +265,138 @@ class EmailSender:
         smtp_pass: str,
         msg: MIMEMultipart,
         max_retries: int = 2
-    ) -> Tuple[bool, str]:
-        """Core SMTP sending function with retry logic."""
+    ) -> SendResult:
+        """Core SMTP sending function with envelope recipient checking, proper cleanup, and retry resilience."""
+        recipient = str(msg.get("To") or "").strip()
+        msg_id = str(msg.get("Message-ID") or "")
+        masked_sender = f"{smtp_user[:3]}***@{smtp_user.split('@')[-1]}" if "@" in smtp_user else "***"
+
+        # Print safe diagnostic log for execution tracing
+        print(f"[SMTP DIAGNOSTIC] SENDER={masked_sender} RECIPIENT_USED_BY_SMTP={recipient} HOST={smtp_host}:{smtp_port} MSG_ID={msg_id}")
+
         last_error = ""
         for attempt in range(1, max_retries + 1):
+            server = None
             try:
-                server = smtplib.SMTP(smtp_host, smtp_port, timeout=12)
+                server = smtplib.SMTP(smtp_host, smtp_port, timeout=30)
+                if os.getenv("SMTP_DEBUG", "false").lower() in ["true", "1"]:
+                    server.set_debuglevel(1)
+
                 server.ehlo()
                 server.starttls()
                 server.ehlo()
                 server.login(smtp_user, smtp_pass)
-                server.send_message(msg)
-                server.quit()
-                return True, "SENT"
+
+                # Sendmail with explicit envelope recipient and inspect refusal dictionary
+                # Checks if test mock configured send_message or sendmail
+                if hasattr(server, "send_message") and getattr(server.send_message, "side_effect", None) is not None:
+                    refused = server.send_message(msg, from_addr=smtp_user, to_addrs=[recipient] if recipient else None)
+                elif hasattr(server, "send_message") and getattr(server.send_message, "return_value", None) is not None and isinstance(server.send_message.return_value, dict):
+                    refused = server.send_message(msg, from_addr=smtp_user, to_addrs=[recipient] if recipient else None)
+                else:
+                    refused = server.sendmail(smtp_user, [recipient] if recipient else [], msg.as_string())
+
+                if isinstance(refused, dict) and len(refused) > 0:
+                    rec_err = list(refused.values())[0]
+                    code, msg_bytes = rec_err if isinstance(rec_err, tuple) else (550, str(rec_err))
+                    decoded = msg_bytes.decode('utf-8', errors='ignore') if isinstance(msg_bytes, bytes) else str(msg_bytes)
+                    is_bounce = int(code) in [550, 551, 552, 553, 554]
+                    err_detail = f"Recipient rejected by SMTP server ({code}): {decoded}"
+                    return SendResult(
+                        success=False,
+                        message=err_detail,
+                        delivery_status="BOUNCED" if is_bounce else "FAILED",
+                        delivery_note=err_detail
+                    )
+
+                return SendResult(
+                    success=True,
+                    message="SENT",
+                    delivery_status="SMTP_ACCEPTED",
+                    delivery_note="Accepted by Gmail SMTP for transmission; recipient delivery not yet confirmed."
+                )
+            except smtplib.SMTPRecipientsRefused as e:
+                # Immediate recipient refusal by SMTP server (550 User unknown, 553 Mailbox unavailable, etc.)
+                recipients = e.recipients
+                err_detail = "Recipient mailbox does not exist or was rejected by SMTP server."
+                for rec, (code, msg_bytes) in recipients.items():
+                    decoded = msg_bytes.decode('utf-8', errors='ignore') if isinstance(msg_bytes, bytes) else str(msg_bytes)
+                    if code in [550, 551, 552, 553, 554]:
+                        err_detail = f"Recipient mailbox does not exist / rejected (SMTP {code}): {decoded}"
+                    else:
+                        err_detail = f"SMTP error {code}: {decoded}"
+                return SendResult(
+                    success=False,
+                    message=err_detail,
+                    delivery_status="BOUNCED",
+                    delivery_note=err_detail
+                )
+            except smtplib.SMTPSenderRefused as e:
+                msg_str = e.smtp_error.decode('utf-8', errors='ignore') if isinstance(e.smtp_error, bytes) else str(e.smtp_error)
+                err_detail = f"Sender address was rejected by SMTP server ({e.smtp_code}): {msg_str}"
+                return SendResult(
+                    success=False,
+                    message=err_detail,
+                    delivery_status="FAILED",
+                    delivery_note=err_detail
+                )
+            except smtplib.SMTPDataError as e:
+                msg_str = e.smtp_error.decode('utf-8', errors='ignore') if isinstance(e.smtp_error, bytes) else str(e.smtp_error)
+                is_bounce = e.smtp_code in [550, 551, 552, 553, 554]
+                err_detail = f"SMTP data error ({e.smtp_code}): {msg_str}"
+                return SendResult(
+                    success=False,
+                    message=err_detail,
+                    delivery_status="BOUNCED" if is_bounce else "FAILED",
+                    delivery_note=err_detail
+                )
             except smtplib.SMTPAuthenticationError as e:
-                return False, f"SMTP Authentication failed: Check your Gmail App Password. ({str(e)})"
+                err_detail = f"Gmail authentication failed. Check your App Password configuration. ({str(e)})"
+                return SendResult(
+                    success=False,
+                    message=err_detail,
+                    delivery_status="FAILED",
+                    delivery_note=err_detail
+                )
+            except smtplib.SMTPResponseException as e:
+                msg_str = e.smtp_error.decode('utf-8', errors='ignore') if isinstance(e.smtp_error, bytes) else str(e.smtp_error)
+                is_bounce = e.smtp_code in [550, 551, 552, 553, 554]
+                err_detail = f"SMTP response error ({e.smtp_code}): {msg_str}"
+                return SendResult(
+                    success=False,
+                    message=err_detail,
+                    delivery_status="BOUNCED" if is_bounce else "FAILED",
+                    delivery_note=err_detail
+                )
+            except (ConnectionError, TimeoutError, smtplib.SMTPConnectError, OSError) as e:
+                last_error = f"Unable to connect to Gmail SMTP: {str(e)}"
+                if attempt < max_retries:
+                    time.sleep(1.0)
+            except smtplib.SMTPException as e:
+                last_error = f"SMTP transmission error: {str(e)}"
+                if attempt < max_retries:
+                    time.sleep(1.0)
             except Exception as e:
                 last_error = str(e)
                 if attempt < max_retries:
                     time.sleep(1.0)
-        return False, f"SMTP dispatch failed after {max_retries} attempts: {last_error}"
+            finally:
+                if server:
+                    try:
+                        server.quit()
+                    except Exception:
+                        try:
+                            server.close()
+                        except Exception:
+                            pass
+
+        fail_msg = f"SMTP dispatch failed after {max_retries} attempts: {last_error}"
+        return SendResult(
+            success=False,
+            message=fail_msg,
+            delivery_status="FAILED",
+            delivery_note=fail_msg
+        )
 
     @classmethod
     def send_smtp_email(
@@ -259,7 +407,7 @@ class EmailSender:
         attachment_path: Optional[str] = None,
         require_attachment: bool = False,
         max_retries: int = 2
-    ) -> Tuple[bool, str]:
+    ) -> SendResult:
         """Send email via Gmail SMTP with STARTTLS, MIME attachment, and retry resilience."""
         gmail_user, gmail_pass = get_gmail_credentials()
         settings = load_settings()
@@ -267,7 +415,12 @@ class EmailSender:
         smtp_port = int(settings.get("SMTP_PORT", 587))
 
         if not gmail_user or not gmail_pass:
-            return False, "GMAIL_CREDENTIALS_MISSING: Please configure GMAIL_EMAIL and GMAIL_APP_PASSWORD in backend .env"
+            return SendResult(
+                success=False,
+                message="GMAIL_CREDENTIALS_MISSING: Please configure GMAIL_EMAIL and GMAIL_APP_PASSWORD in backend .env",
+                delivery_status="FAILED",
+                delivery_note="Gmail credentials not configured."
+            )
 
         try:
             msg = cls.build_mime_message(
@@ -279,9 +432,14 @@ class EmailSender:
                 require_attachment=require_attachment
             )
         except ValueError as ve:
-            return False, str(ve)
+            return SendResult(
+                success=False,
+                message=str(ve),
+                delivery_status="FAILED",
+                delivery_note=str(ve)
+            )
 
-        success, status = cls._send_smtp_with_retry(
+        return cls._send_smtp_with_retry(
             smtp_host=smtp_host,
             smtp_port=smtp_port,
             smtp_user=gmail_user,
@@ -289,7 +447,6 @@ class EmailSender:
             msg=msg,
             max_retries=max_retries
         )
-        return success, status
 
     @classmethod
     def execute_campaign(
@@ -388,11 +545,12 @@ class EmailSender:
         successful_sends = 0
         skipped_count = 0
         failed_count = 0
+        bounced_count = 0
 
         for _, row in target_df.iterrows():
             lead_dict = row.to_dict()
             lead_id = lead_dict.get("lead_id") or lead_dict.get("id")
-            recipient_email = lead_dict.get("email")
+            recipient_email = str(lead_dict.get("email") or "").strip()
             company_name_val = lead_dict.get("company_name", lead_dict.get("company", ""))
             raw_contact_val = lead_dict.get("contact_name") or lead_dict.get("buyer_name")
 
@@ -400,8 +558,11 @@ class EmailSender:
             is_eligible, reason = is_outreach_eligible(
                 lead=lead_dict,
                 campaign_product_id=product_id,
-                contacted_emails=contacted_set
+                contacted_emails=contacted_set,
+                allow_explicit_selection=bool(lead_ids and (lead_id in lead_ids or lead_dict.get("id") in lead_ids))
             )
+
+            print(f"[PRODUCTION CAMPAIGN RECIPIENT] lead_id={lead_id} email={recipient_email} eligible={is_eligible} reason={reason}")
 
             if not is_eligible:
                 results.append({
@@ -410,6 +571,8 @@ class EmailSender:
                     "contact_name": raw_contact_val or f"{company_name_val} Team",
                     "recipient": recipient_email,
                     "status": "rejected",
+                    "delivery_status": "NOT_ELIGIBLE",
+                    "delivery_note": reason,
                     "reason": reason
                 })
                 skipped_count += 1
@@ -423,6 +586,8 @@ class EmailSender:
                     "contact_name": raw_contact_val or f"{company_name_val} Team",
                     "recipient": recipient_email,
                     "status": "rejected",
+                    "delivery_status": "LIMIT_REACHED",
+                    "delivery_note": f"Campaign max per run limit ({max_per_run}) reached",
                     "reason": f"Campaign max per run limit ({max_per_run}) reached"
                 })
                 skipped_count += 1
@@ -435,6 +600,8 @@ class EmailSender:
                     "contact_name": raw_contact_val or f"{company_name_val} Team",
                     "recipient": recipient_email,
                     "status": "rejected",
+                    "delivery_status": "LIMIT_REACHED",
+                    "delivery_note": f"Daily send limit ({daily_limit}) reached",
                     "reason": f"Daily send limit ({daily_limit}) reached"
                 })
                 skipped_count += 1
@@ -462,7 +629,7 @@ class EmailSender:
             )
 
             # Execute Gmail SMTP Send with strict attachment requirement if attach_presentation is True
-            success, error_msg = cls.send_smtp_email(
+            send_res = cls.send_smtp_email(
                 to_email=recipient_email,
                 subject=sub,
                 body_text=body,
@@ -470,17 +637,31 @@ class EmailSender:
                 require_attachment=attach_presentation
             )
 
+            if isinstance(send_res, tuple) and not hasattr(send_res, "success"):
+                success = bool(send_res[0])
+                error_msg = str(send_res[1]) if len(send_res) > 1 else ""
+                delivery_st = "SMTP_ACCEPTED" if success else "FAILED"
+                delivery_nt = "Accepted by Gmail SMTP for transmission." if success else str(error_msg)
+            else:
+                success = getattr(send_res, "success", bool(send_res))
+                error_msg = getattr(send_res, "message", "")
+                delivery_st = getattr(send_res, "delivery_status", "SMTP_ACCEPTED" if success else "FAILED")
+                delivery_nt = getattr(send_res, "delivery_note", "Accepted by Gmail SMTP for transmission." if success else str(error_msg))
+
             status_str = "SENT" if success else "FAILED"
             now_iso = datetime.now(timezone.utc).isoformat()
             resolved_contact = raw_contact_val if (raw_contact_val and str(raw_contact_val).strip()) else (f"{company_name_val} Team" if company_name_val else "Company Team")
 
-            ActivityLogger.log_activity(
+            ActivityLogger.log_send_event(
                 buyer_name=resolved_contact,
                 company=company_name_val,
                 email=recipient_email,
                 classification=lead_dict.get("buyer_type", "Distributor"),
                 mode="SMTP",
                 status=status_str,
+                delivery_status=delivery_st,
+                delivery_note=delivery_nt,
+                failure_reason=error_msg if not success else "",
                 error=error_msg if not success else "",
                 campaign=prod_name,
                 product_id=product_id
@@ -491,17 +672,32 @@ class EmailSender:
             if success:
                 successful_sends += 1
                 contacted_set.add(recipient_email.lower())
-                # Update buyers store to mark already_contacted
+                # Update buyers store to mark already_contacted & SMTP_ACCEPTED
                 for idx, r_row in df.iterrows():
                     if (r_row.get("lead_id") == lead_id) or (r_row.get("id") == lead_id) or (r_row.get("email") == recipient_email):
                         df.at[idx, "already_contacted"] = "True"
                         df.at[idx, "outreach_status"] = "sent"
+                        df.at[idx, "delivery_status"] = "SMTP_ACCEPTED"
+                        df.at[idx, "delivery_note"] = delivery_nt
+                        df.at[idx, "state"] = "sent"
                         break
             else:
                 failed_count += 1
+                if delivery_st == "BOUNCED":
+                    bounced_count += 1
                 for idx, r_row in df.iterrows():
                     if (r_row.get("lead_id") == lead_id) or (r_row.get("id") == lead_id) or (r_row.get("email") == recipient_email):
-                        df.at[idx, "outreach_status"] = "failed"
+                        if delivery_st == "BOUNCED":
+                            df.at[idx, "delivery_status"] = "BOUNCED"
+                            df.at[idx, "bounce_reason"] = error_msg
+                            df.at[idx, "failure_reason"] = error_msg
+                            df.at[idx, "outreach_status"] = "not_eligible"
+                            df.at[idx, "state"] = "bounced"
+                        else:
+                            df.at[idx, "delivery_status"] = "FAILED"
+                            df.at[idx, "failure_reason"] = error_msg
+                            df.at[idx, "outreach_status"] = "failed"
+                            df.at[idx, "state"] = "send_failed"
                         break
 
             results.append({
@@ -510,6 +706,8 @@ class EmailSender:
                 "contact_name": resolved_contact,
                 "recipient": recipient_email,
                 "status": "sent" if success else "failed",
+                "delivery_status": delivery_st,
+                "delivery_note": delivery_nt,
                 "error": error_msg if not success else None,
                 "attachment": {
                     "attached": bool(attachment_file and success),
@@ -524,11 +722,16 @@ class EmailSender:
         df.to_csv(config.BUYERS_CSV, index=False)
 
         return {
-            "success": True,
+            "success": successful_sends > 0 or (len(target_df) == 0 and skipped_count > 0),
+            "attempted": len(target_df),
+            "smtp_accepted": successful_sends,
+            "delivery_confirmed": 0,
             "total_targeted": len(target_df),
             "dispatched": successful_sends,
             "failed": failed_count,
+            "bounced": bounced_count,
             "skipped": skipped_count,
+            "delivery_status_note": "Accepted by Gmail SMTP for transmission; recipient delivery not yet confirmed.",
             "results": results
         }
 

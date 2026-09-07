@@ -29,7 +29,9 @@ def validate_email_address(email: Optional[str]) -> Dict[str, Any]:
             "syntax_valid": False,
             "valid": False,
             "normalized_email": "",
-            "reason": "Missing email address"
+            "reason": "Missing email address",
+            "deliverability_status": "MISSING_EMAIL",
+            "deliverability_note": "No email address provided"
         }
     
     cleaned = str(email).strip().lower()
@@ -42,7 +44,9 @@ def validate_email_address(email: Optional[str]) -> Dict[str, Any]:
             "syntax_valid": False,
             "valid": False,
             "normalized_email": cleaned,
-            "reason": "Malformed email format"
+            "reason": "Malformed email format",
+            "deliverability_status": "INVALID_SYNTAX",
+            "deliverability_note": "Email syntax is malformed"
         }
 
     # Reject reserved RFC placeholder and test domains for live outreach
@@ -54,7 +58,9 @@ def validate_email_address(email: Optional[str]) -> Dict[str, Any]:
             "syntax_valid": False,
             "valid": False,
             "normalized_email": cleaned,
-            "reason": f"Reserved placeholder domain '@{domain}' is not an active production mailbox"
+            "reason": f"Reserved placeholder domain '@{domain}' is not an active production mailbox",
+            "deliverability_status": "RESERVED_DOMAIN",
+            "deliverability_note": f"Reserved placeholder domain '@{domain}'"
         }
 
     try:
@@ -66,7 +72,9 @@ def validate_email_address(email: Optional[str]) -> Dict[str, Any]:
             "syntax_valid": True,
             "valid": True,
             "normalized_email": norm,
-            "reason": "Syntax Valid"
+            "reason": "Syntax Valid",
+            "deliverability_status": "DELIVERABILITY_UNKNOWN",
+            "deliverability_note": "Syntax valid; mailbox existence unconfirmed"
         }
     except EmailNotValidError as e:
         return {
@@ -75,7 +83,9 @@ def validate_email_address(email: Optional[str]) -> Dict[str, Any]:
             "syntax_valid": False,
             "valid": False,
             "normalized_email": cleaned,
-            "reason": str(e)
+            "reason": str(e),
+            "deliverability_status": "INVALID_SYNTAX",
+            "deliverability_note": str(e)
         }
     except Exception:
         if EMAIL_REGEX.match(cleaned):
@@ -85,7 +95,9 @@ def validate_email_address(email: Optional[str]) -> Dict[str, Any]:
                 "syntax_valid": True,
                 "valid": True,
                 "normalized_email": cleaned,
-                "reason": "Syntax Valid"
+                "reason": "Syntax Valid",
+                "deliverability_status": "DELIVERABILITY_UNKNOWN",
+                "deliverability_note": "Syntax valid; mailbox existence unconfirmed"
             }
         return {
             "email": cleaned,
@@ -93,7 +105,9 @@ def validate_email_address(email: Optional[str]) -> Dict[str, Any]:
             "syntax_valid": False,
             "valid": False,
             "normalized_email": cleaned,
-            "reason": "Invalid email format"
+            "reason": "Email verification error",
+            "deliverability_status": "INVALID_SYNTAX",
+            "deliverability_note": "Email verification error"
         }
 
 class EmailValidator:
@@ -101,17 +115,19 @@ class EmailValidator:
 
     @classmethod
     def get_contacted_emails(cls) -> Set[str]:
-        """Retrieve set of lowercase email addresses that have already been contacted."""
+        """Retrieve set of lowercase email addresses that have already been contacted in live campaigns."""
         if not SENT_LOG_CSV.exists():
             return set()
         try:
-            df = pd.read_csv(SENT_LOG_CSV, dtype=str)
-            if "email" in df.columns and "status" in df.columns:
-                contacted = df[df["status"].isin(["SENT", "sent"])]["email"].dropna()
-                return set(contacted.astype(str).str.strip().str.lower())
-            elif "email_address" in df.columns and "status" in df.columns:
-                contacted = df[df["status"].isin(["SENT", "sent"])]["email_address"].dropna()
-                return set(contacted.astype(str).str.strip().str.lower())
+            df = pd.read_csv(SENT_LOG_CSV, dtype=str).fillna("")
+            if "status" in df.columns:
+                mask = df["status"].astype(str).str.upper() == "SENT"
+                if "mode" in df.columns:
+                    mask = mask & (~df["mode"].astype(str).str.upper().isin(["SMTP_TEST", "TEST"]))
+                email_col = "email" if "email" in df.columns else ("email_address" if "email_address" in df.columns else None)
+                if email_col:
+                    contacted = df[mask][email_col].dropna()
+                    return set(contacted.astype(str).str.strip().str.lower())
             return set()
         except Exception:
             return set()

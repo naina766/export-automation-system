@@ -27,7 +27,8 @@ import {
   Trash2,
   Search,
   ExternalLink,
-  HelpCircle
+  HelpCircle,
+  FileText
 } from 'lucide-react';
 import apiService from '../services/api';
 import { useProduct } from '../context/ProductContext';
@@ -484,7 +485,7 @@ export const SendCampaign = () => {
     }
   };
 
-  const handleOpenReview = () => {
+  const handleOpenReviewModal = () => {
     if (!gmailConfigured) {
       setNotification({
         type: 'warning',
@@ -529,13 +530,18 @@ export const SendCampaign = () => {
         };
         res = await apiService.sendTestEmail(payload);
         setResults({
+          attempted: res.attempted || 1,
+          smtp_accepted: res.smtp_accepted ?? (res.success ? 1 : 0),
           dispatched: res.dispatched || (res.success ? 1 : 0),
-          failed: res.failed || (res.success ? 0 : 1),
+          failed: res.failed ?? (res.success ? 0 : 1),
+          bounced: res.bounced || (res.delivery_status === 'BOUNCED' ? 1 : 0),
           results: [{
             recipient: customRecipient.email.trim(),
             contact_name: customRecipient.name.trim(),
             company_name: customRecipient.company.trim(),
-            status: res.success ? 'sent' : 'failed',
+            status: res.delivery_status || (res.success ? 'SMTP_ACCEPTED' : 'FAILED'),
+            delivery_status: res.delivery_status || (res.success ? 'SMTP_ACCEPTED' : 'FAILED'),
+            delivery_note: res.delivery_note,
             attachment: res.attachment,
             error: res.error
           }]
@@ -552,10 +558,42 @@ export const SendCampaign = () => {
         setResults(res.results || {});
       }
 
-      setNotification({
-        type: 'success',
-        message: `Campaign dispatch completed: ${res.results?.dispatched || res.dispatched || 1} emails sent with verified catalog attachment.`
-      });
+      // Dynamic notification based on actual SMTP results
+      let acceptedCount = 0;
+      let failedCount = 0;
+      let bouncedCount = 0;
+      if (isTestMode) {
+        acceptedCount = res.smtp_accepted !== undefined ? res.smtp_accepted : (res.success ? 1 : 0);
+        failedCount = res.failed !== undefined ? res.failed : (res.success ? 0 : 1);
+        bouncedCount = res.bounced !== undefined ? res.bounced : (res.delivery_status === 'BOUNCED' ? 1 : 0);
+      } else {
+        const backendRes = res.results || res;
+        acceptedCount = backendRes.smtp_accepted ?? backendRes.dispatched ?? 0;
+        failedCount = backendRes.failed ?? 0;
+        bouncedCount = backendRes.bounced ?? 0;
+      }
+
+      if (acceptedCount > 0 && failedCount === 0) {
+        setNotification({
+          type: 'success',
+          message: `Campaign completed: ${acceptedCount} email${acceptedCount > 1 ? 's' : ''} accepted by Gmail SMTP.`
+        });
+      } else if (acceptedCount > 0 && failedCount > 0) {
+        setNotification({
+          type: 'warning',
+          message: `Campaign completed: ${acceptedCount} accepted, ${failedCount} failed.`
+        });
+      } else if (acceptedCount === 0 && failedCount > 0) {
+        setNotification({
+          type: 'error',
+          message: `Campaign completed: 0 emails accepted. ${failedCount} recipient${failedCount > 1 ? 's were' : ' was'} rejected.`
+        });
+      } else {
+        setNotification({
+          type: 'error',
+          message: 'Campaign failed: no emails were accepted.'
+        });
+      }
 
       // Refresh lead status
       fetchData();
@@ -802,36 +840,65 @@ export const SendCampaign = () => {
                       const id = lead.lead_id || lead.id;
                       const isSelected = selectedLeadIds.has(id);
                       const contactDisplay = lead.contact_name || `${lead.company_name || lead.company} Team`;
+                      const isBounced = lead.delivery_status === 'BOUNCED' || lead.outreach_status === 'bounced' || lead.state === 'bounced';
+                      const isSent = lead.delivery_status === 'SMTP_ACCEPTED' || lead.outreach_status === 'sent';
 
                       return (
                         <div
                           key={id}
                           className={`p-3 rounded-xl border text-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 transition-all ${
-                            isSelected 
+                            isBounced
+                              ? 'bg-rose-950/20 border-rose-500/40 text-slate-300'
+                              : isSelected 
                               ? 'bg-purple-950/20 border-purple-500/50 text-white shadow-sm' 
                               : 'bg-[#050816] border-[#1E293B] text-slate-400 hover:border-slate-700'
                           }`}
                         >
                           <div 
-                            onClick={() => toggleSelectLead(id)}
-                            className="flex items-start gap-2.5 cursor-pointer flex-1"
+                            onClick={() => !isBounced && toggleSelectLead(id)}
+                            className={`flex items-start gap-2.5 flex-1 ${isBounced ? 'cursor-default' : 'cursor-pointer'}`}
                           >
                             <input
                               type="checkbox"
                               checked={isSelected}
+                              disabled={isBounced}
                               onChange={() => {}}
-                              className="mt-0.5 rounded bg-[#050816] border-[#1E293B] text-purple-600 cursor-pointer"
+                              className="mt-0.5 rounded bg-[#050816] border-[#1E293B] text-purple-600 cursor-pointer disabled:opacity-30"
                             />
-                            <div className="space-y-0.5">
-                              <div className="flex items-center gap-2">
+                            <div className="space-y-1">
+                              <div className="flex flex-wrap items-center gap-2">
                                 <span className="font-bold text-slate-100">{contactDisplay}</span>
                                 <span className="text-[10px] px-2 py-0.2 rounded-full bg-[#0B1220] border border-[#1E293B] text-slate-400 font-mono">
                                   {lead.buyer_type || 'Distributor'}
                                 </span>
                               </div>
-                              <div className="text-[11px] text-emerald-400 font-mono">{lead.email}</div>
+                              <div className="text-[11px] text-emerald-400 font-mono flex items-center gap-2">
+                                <span>{lead.email}</span>
+                              </div>
                               <div className="text-[11px] text-slate-400">
                                 {lead.company_name || lead.company} {lead.country ? `• ${lead.country}` : ''}
+                              </div>
+
+                              {/* Deliverability Status Badges */}
+                              <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                                {isBounced ? (
+                                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-rose-500/15 text-rose-300 border border-rose-500/30">
+                                    ✕ Bounced — {lead.bounce_reason || 'Mailbox does not exist'}
+                                  </span>
+                                ) : isSent ? (
+                                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+                                    ✓ SMTP Accepted
+                                  </span>
+                                ) : (
+                                  <>
+                                    <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+                                      ✓ Valid Email
+                                    </span>
+                                    <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-amber-500/10 text-amber-300 border border-amber-500/30">
+                                      ⚠ Deliverability Unknown
+                                    </span>
+                                  </>
+                                )}
                               </div>
                             </div>
                           </div>
@@ -843,8 +910,12 @@ export const SendCampaign = () => {
                                 e.stopPropagation();
                                 handleOpenEditModal(lead);
                               }}
-                              className="p-1.5 rounded-lg bg-[#0B1220] hover:bg-purple-900/30 text-slate-300 hover:text-purple-300 border border-[#1E293B] transition-all"
-                              title="Edit Buyer Details"
+                              className={`p-1.5 rounded-lg border transition-all ${
+                                isBounced 
+                                  ? 'bg-amber-500/20 text-amber-300 border-amber-500/40 hover:bg-amber-500/30' 
+                                  : 'bg-[#0B1220] hover:bg-purple-900/30 text-slate-300 hover:text-purple-300 border-[#1E293B]'
+                              }`}
+                              title={isBounced ? "Update Recipient Email" : "Edit Buyer Details"}
                             >
                               <Edit2 className="w-3.5 h-3.5" />
                             </button>
@@ -880,122 +951,197 @@ export const SendCampaign = () => {
 
             <div className="space-y-3 text-xs">
               <div>
-                <label className="block text-slate-300 mb-1 font-semibold">Subject Template</label>
+                <label className="block text-slate-300 font-semibold mb-1">Email Subject Line</label>
                 <input
                   type="text"
                   value={subject}
                   onChange={(e) => setSubject(e.target.value)}
-                  className="w-full px-3 py-2.5 rounded-xl bg-[#050816] border border-[#1E293B] text-white focus:outline-none focus:border-purple-500 font-sans"
+                  className="w-full px-3 py-2 rounded-xl bg-[#050816] border border-[#1E293B] text-white focus:outline-none focus:border-purple-500"
                 />
               </div>
 
               <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className="text-slate-300 font-semibold">Body Template</label>
-                  <span className="text-[10px] text-purple-400 font-mono">Insert tags below</span>
-                </div>
+                <label className="block text-slate-300 font-semibold mb-1">Email Body Template</label>
                 <textarea
-                  ref={textareaRef}
+                  rows={8}
                   value={body}
                   onChange={(e) => setBody(e.target.value)}
-                  rows={9}
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-[#050816] border border-[#1E293B] text-white focus:outline-none focus:border-purple-500 font-sans leading-relaxed text-xs"
+                  className="w-full px-3 py-2.5 rounded-xl bg-[#050816] border border-[#1E293B] text-white focus:outline-none focus:border-purple-500 font-sans leading-relaxed resize-y"
                 />
               </div>
 
               {/* Dynamic Variable Chips */}
-              <div className="space-y-1.5">
-                <div className="text-[11px] text-slate-400">Click to insert lead-specific personalization tag:</div>
+              <div>
+                <div className="text-[11px] text-slate-400 mb-1.5 font-semibold">Available Personalization Tags:</div>
                 <div className="flex flex-wrap gap-1.5">
-                  {[
-                    { label: 'Contact Name', tag: '{{contact_name}}' },
-                    { label: 'Company Name', tag: '{{company_name}}' },
-                    { label: 'Country', tag: '{{country}}' },
-                    { label: 'Product Name', tag: '{{product_name}}' },
-                    { label: 'Buyer Type', tag: '{{buyer_type}}' }
-                  ].map(({ label, tag }) => (
+                  {['{{contact_name}}', '{{company_name}}', '{{country}}', '{{product_name}}', '{{buyer_type}}'].map((tag) => (
                     <button
                       key={tag}
                       type="button"
-                      onClick={() => insertVariable(tag)}
-                      className="px-2.5 py-1 rounded-lg bg-[#050816] hover:bg-purple-950/40 text-purple-300 hover:text-purple-200 border border-purple-500/30 text-[11px] font-mono flex items-center gap-1 transition-all cursor-pointer"
-                      title={`Insert ${tag} into template`}
+                      onClick={() => setBody(prev => prev + ' ' + tag)}
+                      className="px-2.5 py-1 rounded-lg bg-[#050816] hover:bg-purple-900/30 text-purple-300 border border-[#1E293B] hover:border-purple-500/40 text-[11px] font-mono transition-all"
                     >
-                      <span>+</span>
-                      <span>{label}</span>
+                      + {tag}
                     </button>
                   ))}
                 </div>
               </div>
             </div>
+          </div>
 
-            {/* 4. PRODUCT PRESENTATION CATALOG (PDF) */}
-            <div className="p-3.5 rounded-xl bg-[#050816] border border-[#1E293B] flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
+          {/* 4. PRODUCT PRESENTATION CATALOG (PDF) */}
+          <div className="p-5 rounded-2xl bg-[#0B1220] border border-[#1E293B] shadow-xl space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
                 <Paperclip className="w-4 h-4 text-purple-400" />
-                <div className="text-xs">
-                  <div className="font-bold text-white">Attach Product Export Presentation (PDF)</div>
-                  <div className="text-[11px] text-slate-400 flex items-center gap-1">
-                    <CheckCircle2 className="w-3 h-3 text-emerald-400" />
-                    <span>Verified Catalog: <code className="text-purple-300 font-mono">{currentCatalogFile}</code></span>
-                  </div>
-                </div>
+                <h2 className="text-xs font-bold text-white uppercase tracking-wider">Product Presentation Catalog (PDF)</h2>
               </div>
-              <input
-                type="checkbox"
-                checked={attachPdf}
-                onChange={(e) => setAttachPdf(e.target.checked)}
-                className="w-4 h-4 rounded bg-[#050816] border-[#1E293B] text-purple-600 cursor-pointer"
-              />
+              <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={attachPdf}
+                  onChange={(e) => setAttachPdf(e.target.checked)}
+                  className="rounded bg-[#050816] border-[#1E293B] text-purple-600 cursor-pointer"
+                />
+                <span>Attach Catalog</span>
+              </label>
             </div>
 
-            {/* 6. LAUNCH REVIEW & SEND BUTTON */}
-            <button
-              type="button"
-              onClick={handleOpenReview}
-              disabled={sending || (!isTestMode && selectedLeadIds.size === 0)}
-              className="w-full py-3.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold shadow-lg shadow-purple-600/20 transition-all flex items-center justify-center gap-2 disabled:opacity-50 active:scale-95 cursor-pointer"
-            >
-              <Eye className="w-4 h-4" />
-              <span>Review Campaign & Recipients ({isTestMode ? '1 Test Recipient' : `${selectedLeadIds.size} Buyers`})</span>
-              <ArrowRight className="w-4 h-4" />
-            </button>
+            <div className="p-3.5 rounded-xl bg-[#050816] border border-[#1E293B] flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 rounded-xl bg-purple-500/10 text-purple-400 border border-purple-500/20">
+                  <FileText className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="text-xs font-bold text-white flex items-center gap-2">
+                    <span>{currentCatalogFile}</span>
+                    <span className="text-[10px] px-2 py-0.2 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                      ✓ Verified PDF
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-400 mt-0.5">
+                    Authentic export specifications automatically resolved for {currentProductName}.
+                  </p>
+                </div>
+              </div>
+            </div>
           </div>
+
         </div>
 
-        {/* Right Column: Dynamic Live Preview & Dispatch Results */}
+        {/* Right Column: Live Personalization Preview + Review & Send Actions */}
         <div className="lg:col-span-5 space-y-6">
+
           {/* 5. LIVE PERSONALIZATION PREVIEW */}
-          <div className="bg-[#0B1220] border border-[#1E293B] rounded-2xl p-5 shadow-xl space-y-4 sticky top-6">
+          <div className="p-5 rounded-2xl bg-[#0B1220] border border-[#1E293B] shadow-xl space-y-4">
             <div className="flex items-center justify-between border-b border-[#1E293B] pb-3">
               <div className="flex items-center gap-2">
                 <Eye className="w-4 h-4 text-cyan-400" />
                 <h2 className="text-xs font-bold text-white uppercase tracking-wider">Live Personalization Preview</h2>
               </div>
-              <span className="text-[10px] text-slate-400 font-mono">
-                {previewLead.company_name || previewLead.company || 'Preview Sample'}
+              <span className="text-[10px] text-cyan-400 bg-cyan-500/10 border border-cyan-500/20 px-2 py-0.5 rounded-full font-mono">
+                {isTestMode ? 'Test Recipient Mode' : 'Real Buyer Preview'}
               </span>
             </div>
 
             <div className="p-4 rounded-xl bg-[#050816] border border-[#1E293B] space-y-3 text-xs">
-              <div className="border-b border-[#1E293B] pb-2 space-y-1">
-                <div className="text-slate-400 text-[11px]">
-                  To: <code className="text-emerald-400 font-mono">{previewLead.email || 'recipient@organization.com'}</code>
-                </div>
-                <div className="text-white font-bold">{previewSubject}</div>
+              <div>
+                <span className="text-slate-400 text-[11px]">To:</span>
+                <span className="text-white font-mono ml-2 font-semibold">
+                  {previewLead.email || 'partner@example.com'}
+                </span>
+                <span className="text-slate-400 ml-2">({previewCompany})</span>
               </div>
 
-              <div className="text-slate-200 whitespace-pre-line leading-relaxed text-[11px] font-sans">
-                {previewBody}
+              <div>
+                <span className="text-slate-400 text-[11px]">Subject:</span>
+                <div className="text-white font-semibold mt-1 p-2.5 rounded-lg bg-[#0B1220] border border-[#1E293B]">
+                  {previewSubject}
+                </div>
+              </div>
+
+              <div>
+                <span className="text-slate-400 text-[11px]">Message Body:</span>
+                <div className="text-slate-200 mt-1 p-3 rounded-lg bg-[#0B1220] border border-[#1E293B] whitespace-pre-line leading-relaxed font-sans min-h-[160px]">
+                  {previewBody}
+                </div>
               </div>
 
               {attachPdf && (
-                <div className="pt-2 border-t border-[#1E293B] flex items-center gap-2 text-[10px] text-purple-300">
-                  <Paperclip className="w-3.5 h-3.5 text-purple-400" />
-                  <span>Attached: <code className="font-mono">{currentCatalogFile}</code></span>
+                <div className="pt-2 border-t border-[#1E293B] flex items-center justify-between text-[11px] text-purple-300">
+                  <div className="flex items-center gap-1.5">
+                    <Paperclip className="w-3.5 h-3.5 text-purple-400" />
+                    <span>Attached: <b>{currentCatalogFile}</b></span>
+                  </div>
+                  <span className="text-emerald-400 text-[10px]">application/pdf</span>
                 </div>
               )}
             </div>
+          </div>
+
+          {/* 6. REVIEW & SEND CAMPAIGN */}
+          <div className="p-5 rounded-2xl bg-[#0B1220] border border-[#1E293B] shadow-xl space-y-4">
+            <div className="flex items-center justify-between border-b border-[#1E293B] pb-3">
+              <div className="flex items-center gap-2">
+                <Send className="w-4 h-4 text-emerald-400" />
+                <h2 className="text-xs font-bold text-white uppercase tracking-wider">Review & Send Campaign</h2>
+              </div>
+            </div>
+
+            <div className="p-3.5 rounded-xl bg-[#050816] border border-[#1E293B] space-y-2 text-xs">
+              <div className="flex items-center justify-between text-slate-300">
+                <span>Selected Export Product:</span>
+                <span className="font-bold text-white">{currentProductName}</span>
+              </div>
+              <div className="flex items-center justify-between text-slate-300">
+                <span>Targeted Recipients:</span>
+                <span className="font-bold text-purple-400">
+                  {isTestMode ? '1 Controlled Test Email' : `${selectedLeadIds.size} Real Qualified Buyers`}
+                </span>
+              </div>
+              <div className="flex items-center justify-between text-slate-300">
+                <span>Catalog PDF Included:</span>
+                <span className={`font-bold ${attachPdf ? 'text-emerald-400' : 'text-slate-400'}`}>
+                  {attachPdf ? `✓ ${currentCatalogFile}` : 'None'}
+                </span>
+              </div>
+              <div className="flex items-center justify-between text-slate-300">
+                <span>SMTP Protocol:</span>
+                <span className="font-bold text-cyan-400">Gmail STARTTLS (Port 587)</span>
+              </div>
+            </div>
+
+            {!gmailConfigured && (
+              <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs flex items-start gap-2">
+                <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                <span>
+                  Gmail credentials not detected. Please configure <code className="font-mono text-amber-200">GMAIL_EMAIL</code> and <code className="font-mono text-amber-200">GMAIL_APP_PASSWORD</code> in <Link to="/settings" className="underline font-bold">Settings</Link>.
+                </span>
+              </div>
+            )}
+
+            <button
+              type="button"
+              onClick={handleOpenReviewModal}
+              disabled={sending || (!isTestMode && selectedLeadIds.size === 0)}
+              className="w-full py-3 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold text-xs shadow-lg shadow-purple-600/20 flex items-center justify-center gap-2 transition-all disabled:opacity-40 cursor-pointer active:scale-95"
+            >
+              {sending ? (
+                <>
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                  <span>Transmitting Messages via SMTP...</span>
+                </>
+              ) : (
+                <>
+                  <Send className="w-4 h-4" />
+                  <span>
+                    {isTestMode 
+                      ? 'Review & Send Test Email' 
+                      : `Review & Send to ${selectedLeadIds.size} Buyers`}
+                  </span>
+                </>
+              )}
+            </button>
 
             {/* Results Summary if Dispatched */}
             {results && (
@@ -1003,25 +1149,39 @@ export const SendCampaign = () => {
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2 text-emerald-400 font-bold text-xs">
                     <CheckCircle2 className="w-4 h-4" />
-                    <span>Outreach Dispatch Summary</span>
+                    <span>Outreach Dispatch Summary (SMTP)</span>
                   </div>
                   <span className="text-xs text-white">
-                    <b>{results.dispatched || 0}</b> Sent • <b>{results.failed || 0}</b> Failed
+                    <b>{results.dispatched || 0}</b> Submitted • <b>{results.failed || 0}</b> Failed
                   </span>
                 </div>
+                <p className="text-[11px] text-slate-400">
+                  Accepted by Gmail SMTP for transmission. Recipient delivery is unconfirmed.
+                </p>
 
-                <div className="max-h-40 overflow-y-auto space-y-1.5 text-[11px]">
+                <div className="max-h-48 overflow-y-auto space-y-1.5 text-[11px]">
                   {(results.results || []).map((r, i) => (
-                    <div key={i} className="flex items-center justify-between p-2 rounded bg-[#0B1220] border border-[#1E293B]">
-                      <div>
+                    <div key={i} className="p-2.5 rounded-xl bg-[#0B1220] border border-[#1E293B] space-y-1">
+                      <div className="flex items-center justify-between">
                         <span className="text-slate-200 font-semibold">{r.contact_name || r.company_name || r.recipient}</span>
-                        <div className="text-[10px] text-slate-400 font-mono">{r.recipient}</div>
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                          r.status === 'sent' || r.delivery_status === 'SMTP_ACCEPTED'
+                            ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                            : r.delivery_status === 'BOUNCED'
+                            ? 'bg-rose-500/15 text-rose-300 border border-rose-500/30'
+                            : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
+                        }`}>
+                          {r.status === 'sent' || r.delivery_status === 'SMTP_ACCEPTED' 
+                            ? '✓ SMTP ACCEPTED' 
+                            : r.delivery_status === 'BOUNCED'
+                            ? '✕ BOUNCED'
+                            : '✕ FAILED'}
+                        </span>
                       </div>
-                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                        r.status === 'sent' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
-                      }`}>
-                        {r.status === 'sent' ? '✓ SENT' : '✕ FAILED'}
-                      </span>
+                      <div className="text-[10px] text-slate-400 font-mono">{r.recipient}</div>
+                      <div className="text-[10px] text-slate-400">
+                        {r.delivery_note || (r.status === 'sent' ? 'Accepted by Gmail SMTP. Final delivery is not guaranteed.' : r.error || 'Dispatch failed')}
+                      </div>
                     </div>
                   ))}
                 </div>

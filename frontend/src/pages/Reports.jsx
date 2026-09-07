@@ -127,7 +127,7 @@ export const Reports = () => {
       render: (row) => <span className="text-xs text-[#94A3B8] font-mono">{row.timestamp}</span>,
     },
     {
-      header: 'Buyer Name',
+      header: 'Buyer / Recipient',
       accessor: 'buyer_name',
       render: (row) => <span className="font-semibold text-white">{row.buyer_name || '—'}</span>,
     },
@@ -142,19 +142,30 @@ export const Reports = () => {
       render: (row) => <code className="text-xs text-purple-300 font-mono">{row.email}</code>,
     },
     {
-      header: 'Status',
+      header: 'Send Status',
       accessor: 'status',
       render: (row) => <StatusBadge status={row.status} />,
     },
     {
-      header: 'Channel',
-      accessor: 'mode',
-      render: (row) => <span className="text-xs text-slate-400">Direct Email</span>,
+      header: 'Delivery Status',
+      accessor: 'delivery_status',
+      render: (row) => (
+        <StatusBadge 
+          status={row.delivery_status || (row.status === 'SENT' ? 'smtp_accepted' : 'failed')} 
+        />
+      ),
     },
     {
       header: 'Delivery Notes',
-      accessor: 'error',
-      render: (row) => <span className="text-xs text-slate-400 truncate max-w-xs block">{row.error ? 'Delivery attempted' : 'Delivered'}</span>,
+      accessor: 'delivery_note',
+      render: (row) => {
+        const note = row.delivery_note || (row.status === 'SENT' ? 'Accepted by Gmail SMTP for transmission; delivery unconfirmed' : row.error || 'Dispatch failed');
+        return (
+          <span className="text-xs text-slate-400 truncate max-w-xs block" title={note}>
+            {note}
+          </span>
+        );
+      },
     },
   ];
 
@@ -275,24 +286,24 @@ export const Reports = () => {
         </div>
 
         <div className={`p-4 rounded-xl bg-[#0B1220] border border-[#1E293B] transition-opacity duration-200 ${refreshing ? 'opacity-50' : 'opacity-100'}`}>
-          <div className="text-xs text-[#94A3B8]">Emails Sent</div>
+          <div className="text-xs text-[#94A3B8]">Emails Submitted</div>
           <div className="text-2xl font-bold text-green-400 mt-1">{emailsSent}</div>
-          <div className="text-[10px] text-slate-500 mt-1">Direct Dispatches</div>
+          <div className="text-[10px] text-slate-500 mt-1">SMTP Accepted</div>
         </div>
 
         <div className={`p-4 rounded-xl bg-[#0B1220] border border-[#1E293B] transition-opacity duration-200 ${refreshing ? 'opacity-50' : 'opacity-100'}`}>
-          <div className="text-xs text-[#94A3B8]">Failed</div>
+          <div className="text-xs text-[#94A3B8]">Failed / Bounces</div>
           <div className="text-2xl font-bold text-rose-400 mt-1">{failedSends}</div>
-          <div className="text-[10px] text-slate-500 mt-1">Delivery errors</div>
+          <div className="text-[10px] text-slate-500 mt-1">Errors & Bounces</div>
         </div>
 
         <div className={`p-4 rounded-xl bg-[#0B1220] border border-[#1E293B] transition-opacity duration-200 ${refreshing ? 'opacity-50' : 'opacity-100'}`}>
-          <div className="text-xs text-[#94A3B8]">Delivery Rate</div>
+          <div className="text-xs text-[#94A3B8]">SMTP Accept Rate</div>
           <div className="text-2xl font-bold text-cyan-400 mt-1">
             {successRate !== null && successRate !== undefined ? `${successRate}%` : '—'}
           </div>
           <div className="text-[10px] text-slate-500 mt-1">
-            {successRate !== null && successRate !== undefined ? 'Delivery Success' : 'No sends recorded'}
+            {successRate !== null && successRate !== undefined ? 'Delivery Unconfirmed' : 'No sends recorded'}
           </div>
         </div>
       </div>

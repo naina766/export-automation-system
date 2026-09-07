@@ -225,14 +225,14 @@ export const Dashboard = () => {
           color="emerald"
         />
         <StatCard
-          title="Emails Sent"
+          title="Emails Submitted"
           value={prodSends}
           subtext={emailsSentSubtext}
           icon={Send}
           color="amber"
         />
         <StatCard
-          title="Delivery Rate"
+          title="SMTP Accept Rate"
           value={successRateDisplay}
           subtext={successRateSubtext}
           icon={Percent}

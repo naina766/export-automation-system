@@ -16,6 +16,9 @@ SENT_LOG_COLUMNS = [
     "classification",
     "mode",
     "status",
+    "delivery_status",
+    "delivery_note",
+    "failure_reason",
     "error",
     "campaign",
     "product_id",
@@ -51,14 +54,34 @@ class ActivityLogger:
         campaign: str = "Singing Bowls Outreach",
         error: str = "",
         product_id: str = "",
-        campaign_id: str = ""
+        campaign_id: str = "",
+        delivery_status: Optional[str] = None,
+        delivery_note: Optional[str] = None,
+        failure_reason: Optional[str] = None
     ) -> Dict[str, Any]:
         """
-        Record a campaign send event.
-        Allowed status: SENT | FAILED | SKIPPED_DUPLICATE | INVALID_EMAIL
+        Record a campaign send event with delivery state.
+        Status: SENT | FAILED | SKIPPED_DUPLICATE | INVALID_EMAIL
+        Delivery status: SMTP_ACCEPTED | BOUNCED | FAILED | PENDING
         """
         cls.ensure_log_file()
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        # Determine sensible default delivery status if not provided
+        resolved_delivery_status = delivery_status
+        if not resolved_delivery_status:
+            if status.upper() == "SENT":
+                resolved_delivery_status = "SMTP_ACCEPTED"
+            elif "bounce" in error.lower() or "550" in error or "553" in error:
+                resolved_delivery_status = "BOUNCED"
+            else:
+                resolved_delivery_status = "FAILED"
+
+        resolved_note = delivery_note or (
+            "Accepted by Gmail SMTP for transmission; recipient delivery not yet confirmed."
+            if resolved_delivery_status == "SMTP_ACCEPTED" else error
+        )
+
         entry = {
             "timestamp": timestamp,
             "buyer_name": str(buyer_name).strip(),
@@ -67,6 +90,9 @@ class ActivityLogger:
             "classification": str(classification).strip(),
             "mode": str(mode).upper(),
             "status": str(status).upper(),
+            "delivery_status": str(resolved_delivery_status).upper(),
+            "delivery_note": str(resolved_note).strip(),
+            "failure_reason": str(failure_reason or error).strip(),
             "error": str(error).strip(),
             "campaign": str(campaign).strip(),
             "product_id": str(product_id).strip(),
