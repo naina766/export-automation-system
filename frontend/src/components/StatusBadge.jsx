@@ -23,8 +23,11 @@ export const StatusBadge = ({ status, text }) => {
 
   const displayText = text || (
     normalized === 'smtp_accepted' ? 'SMTP Accepted' :
+    normalized === 'valid' ? 'Format Valid' :
+    normalized === 'missing' ? 'Missing Email' :
     normalized === 'bounced' ? 'Bounced' :
-    normalized === 'deliverability_unknown' ? 'Deliverability Unknown' :
+    normalized === 'deliverability_unknown' ? 'Delivery not confirmed' :
+    normalized === 'sent' ? 'SMTP Accepted' :
     status
   );
 

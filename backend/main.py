@@ -374,7 +374,7 @@ async def get_dashboard_data(product_id: Optional[str] = None):
 # ==========================================
 # 4. LIVE BUYER DISCOVERY & LEADS
 # ==========================================
-@app.get("/api/leads")
+@app.get("/api/leads", dependencies=[Depends(require_api_key)])
 async def get_all_leads(product_id: Optional[str] = None):
     if not BUYERS_CSV.exists():
         return {"total": 0, "leads": []}
@@ -403,7 +403,7 @@ async def get_all_leads(product_id: Optional[str] = None):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to read buyers: {str(e)}")
 
-@app.get("/api/leads/invalid")
+@app.get("/api/leads/invalid", dependencies=[Depends(require_api_key)])
 async def get_invalid_leads_endpoint():
     """Returns leads that have invalid or missing emails or failed syntax check."""
     if not BUYERS_CSV.exists():
@@ -764,7 +764,7 @@ async def create_buyer_endpoint(payload: CreateBuyerRequest):
         "lead": created
     }
 
-@app.get("/api/debug/lead/{lead_id}")
+@app.get("/api/debug/lead/{lead_id}", dependencies=[Depends(require_api_key)])
 async def debug_lead_endpoint(lead_id: str):
     """Safe development diagnostic endpoint returning non-secret lead details."""
     lead = LeadService.get_lead(lead_id)
@@ -781,7 +781,7 @@ async def debug_lead_endpoint(lead_id: str):
         "already_contacted": lead.get("already_contacted")
     }
 
-@app.get("/api/leads/{lead_id}")
+@app.get("/api/leads/{lead_id}", dependencies=[Depends(require_api_key)])
 async def get_single_lead_endpoint(lead_id: str):
     """Retrieve details for a specific buyer lead."""
     lead = LeadService.get_lead(lead_id)
@@ -832,7 +832,8 @@ async def discover_buyers_endpoint(payload: SearchRequest):
 
     product_name = payload.product or (target_product.get("name") if target_product else "Himalayan Sound Healing Bowls")
     product_id = (target_product.get("id") if target_product else None) or payload.product_id or "himalayan-sound-healing-bowls"
-    keywords = payload.keywords or (target_product.get("keywords") if target_product else None)
+    user_kw = str(payload.keywords or "").strip()
+    keywords = user_kw if user_kw else None
     buyer_type = payload.buyer_type or (target_product.get("buyer_types")[0] if target_product and target_product.get("buyer_types") else "Distributor")
 
     provider = WebBuyerSearchProvider()
@@ -903,8 +904,11 @@ async def discover_buyers_endpoint(payload: SearchRequest):
     valid_email_leads = [
         l for l in leads 
         if l.get("email") and 
+        str(l.get("email", "")).strip().lower() not in ["none", "null", "undefined", "missing", ""] and
         (l.get("email_status") == "valid" or str(l.get("syntax_valid", "")).lower() == "true" or l.get("syntax_valid") is True) and 
-        not (l.get("is_duplicate") is True or str(l.get("is_duplicate", "")).lower() == "true")
+        not (l.get("is_duplicate") is True or str(l.get("is_duplicate", "")).lower() == "true") and
+        str(l.get("delivery_status", "")).upper() != "BOUNCED" and
+        str(l.get("outreach_status", "")).lower() != "bounced"
     ]
     valid_email_count = len(valid_email_leads)
     missing_email_count = len([l for l in leads if not l.get("email") or l.get("email_status") == "missing"])
@@ -921,6 +925,12 @@ async def discover_buyers_endpoint(payload: SearchRequest):
         buyer_type=buyer_type,
         keywords=keywords
     )
+    query_list = provider.build_search_queries(
+        product=product_name,
+        country=payload.country,
+        buyer_type=buyer_type,
+        keywords=keywords
+    )
 
     from datetime import datetime, timezone
     searched_at = datetime.now(timezone.utc).isoformat()
@@ -928,6 +938,7 @@ async def discover_buyers_endpoint(payload: SearchRequest):
     return {
         "success": True,
         "query": query_str,
+        "queries": query_list,
         "source": provider.provider,
         "searched_at": searched_at,
         "product_id": product_id,
@@ -937,6 +948,8 @@ async def discover_buyers_endpoint(payload: SearchRequest):
         "pipeline_summary": {
             "total_discovered": total_found,
             "extracted": extracted_count,
+            "outreach_ready": valid_email_count,
+            "needs_email": missing_email_count,
             "valid_emails": valid_email_count,
             "missing_emails": missing_email_count,
             "invalid_emails": invalid_email_count,
@@ -1151,7 +1164,7 @@ async def send_campaign(payload: SendCampaignRequest):
             company=payload.custom_company_name or "Custom Organization",
             email=payload.custom_email.strip(),
             classification="custom",
-            mode="SMTP",
+            mode="SMTP_TEST",
             status=status_str,
             delivery_status=delivery_st,
             delivery_note=delivery_nt,
@@ -1533,7 +1546,7 @@ async def get_catalog_file():
         media_type="application/pdf"
     )
 
-@app.get("/api/leads/invalid")
+@app.get("/api/leads/invalid", dependencies=[Depends(require_api_key)])
 async def get_invalid_leads():
     """Returns invalid/missing leads with exclusion reasons to ensure transparency."""
     if not BUYERS_CSV.exists():

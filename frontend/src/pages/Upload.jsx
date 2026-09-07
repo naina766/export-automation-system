@@ -455,7 +455,7 @@ export const Upload = () => {
               onClick={() => setViewFilter('valid')}
               className={`px-3 py-1.5 rounded-lg transition-all ${viewFilter === 'valid' ? 'bg-emerald-600 text-white font-bold' : 'text-slate-400 hover:text-white'}`}
             >
-              Verified Contacts ({leads.filter(r => (r.email_status === 'valid' || r.valid === 'True' || r.valid === true) && (r.is_duplicate !== 'True' && r.is_duplicate !== true)).length})
+              Outreach Ready ({leads.filter(r => (r.email_status === 'valid' || r.valid === 'True' || r.valid === true) && (r.is_duplicate !== 'True' && r.is_duplicate !== true)).length})
             </button>
             <button
               onClick={() => setViewFilter('invalid')}
@@ -470,7 +470,7 @@ export const Upload = () => {
           <div className="p-3.5 rounded-xl bg-amber-950/30 border border-amber-500/30 text-amber-200 text-xs flex items-center gap-2.5">
             <ShieldAlert className="w-4 h-4 text-amber-400 flex-shrink-0" />
             <span>
-              <b>Contact Guardrail:</b> Buyers without verified email addresses are paused from campaign outreach until an email is found or manually provided.
+              <b>Contact Guardrail:</b> Buyers without a format-valid email cannot be sent production campaigns. They remain in the discovered buyer list.
             </span>
           </div>
         )}

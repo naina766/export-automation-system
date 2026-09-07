@@ -282,7 +282,7 @@ export const Reports = () => {
         <div className={`p-4 rounded-xl bg-[#0B1220] border border-[#1E293B] transition-opacity duration-200 ${refreshing ? 'opacity-50' : 'opacity-100'}`}>
           <div className="text-xs text-[#94A3B8]">Valid Contacts</div>
           <div className="text-2xl font-bold text-emerald-400 mt-1">{validContacts}</div>
-          <div className="text-[10px] text-slate-500 mt-1">{valPct}% verified format</div>
+          <div className="text-[10px] text-slate-500 mt-1">{valPct}% format valid</div>
         </div>
 
         <div className={`p-4 rounded-xl bg-[#0B1220] border border-[#1E293B] transition-opacity duration-200 ${refreshing ? 'opacity-50' : 'opacity-100'}`}>
@@ -375,7 +375,7 @@ export const Reports = () => {
 
           <div className="space-y-2 text-xs">
             <div className="flex justify-between py-1 border-b border-[#1E293B]">
-              <span className="text-slate-400">Verified contacts:</span>
+              <span className="text-slate-400">Format-valid contacts:</span>
               <span className="font-semibold text-emerald-400">{metrics?.data_hygiene?.valid_contacts || 0}</span>
             </div>
             <div className="flex justify-between py-1 border-b border-[#1E293B]">

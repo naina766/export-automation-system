@@ -18,7 +18,7 @@ def test_report_csv_generation():
     csv_text = ReportGenerator.generate_csv_report_string()
     assert "EXPORT AUTOMATION SYSTEM" in csv_text
     assert "KPI SUMMARY" in csv_text
-    assert "Delivery Success Rate" in csv_text
+    assert "SMTP Accept Rate" in csv_text
 
 def test_test_email_accounting_separation():
     metrics = ReportGenerator.get_campaign_metrics()

@@ -67,7 +67,7 @@ export const DiscoverBuyers = () => {
   const [product, setProduct] = useState(selectedProduct?.name || 'Himalayan Sound Healing Bowls');
   const [country, setCountry] = useState('United States');
   const [buyerType, setBuyerType] = useState('Distributor');
-  const [keywords, setKeywords] = useState('sound healing, meditation, wellness, singing bowls');
+  const [keywords, setKeywords] = useState('');
   const [limit, setLimit] = useState(25);
   
   const [results, setResults] = useState([]);
@@ -77,8 +77,8 @@ export const DiscoverBuyers = () => {
   const [viewMode, setViewMode] = useState('table'); // 'table' | 'cards'
   const [notification, setNotification] = useState({ type: '', message: '' });
 
-  // Filter tab: 'valid_buyers' (DEFAULT) | 'excluded'
-  const [activeTab, setActiveTab] = useState('valid_buyers');
+  // Primary: Valid / Outreach Ready. Secondary: Excluded / Needs Email
+  const [activeTab, setActiveTab] = useState('outreach_ready');
   const [excludedSubFilter, setExcludedSubFilter] = useState('all'); // 'all' | 'missing' | 'invalid' | 'duplicate'
   const [selectedLeadIds, setSelectedLeadIds] = useState(new Set());
 
@@ -106,9 +106,6 @@ export const DiscoverBuyers = () => {
   useEffect(() => {
     if (selectedProduct) {
       setProduct(selectedProduct.name);
-      if (selectedProduct.keywords && selectedProduct.keywords.length > 0) {
-        setKeywords(Array.isArray(selectedProduct.keywords) ? selectedProduct.keywords.join(', ') : selectedProduct.keywords);
-      }
       if (selectedProduct.target_countries && selectedProduct.target_countries.length > 0) {
         setCountry(selectedProduct.target_countries[0]);
       }
@@ -138,24 +135,53 @@ export const DiscoverBuyers = () => {
     return val && String(val).trim() !== '' && String(val).toLowerCase() !== 'none' && String(val).toLowerCase() !== 'null' && String(val).toLowerCase() !== 'undefined';
   }
 
-  // Helper to check if a lead has a valid email and passed validation
-  const isValidBuyer = (lead) => {
-    const hasEmail = strNotEmpty(lead.email);
-    const isValidFormat = lead.email_status === 'valid' || lead.syntax_valid === true || lead.syntax_valid === 'True';
-    const isNotDup = !(lead.is_duplicate === true || lead.is_duplicate === 'True');
-    return hasEmail && isValidFormat && isNotDup;
+  const matchesSelectedProduct = (lead) => {
+    const selectedId = selectedProduct?.id;
+    const leadPid = lead?.product_id;
+    if (!selectedId || !strNotEmpty(leadPid)) return true;
+    return String(leadPid) === String(selectedId);
   };
+
+  // Primary "Valid Buyer":
+  // 1. company discovered from live web search (not demo data unless in demo preview)
+  // 2. relevant to selected product
+  // 3. actual public email discovered (not missing/none)
+  // 4. email syntax valid (RFC compliant)
+  // 5. not duplicate
+  // 6. correct product association
+  // 7. passes application's qualification/outreach safety rules (not known bounced)
+  const isValidBuyer = (lead) => {
+    if (!lead) return false;
+    const isDemo = lead.is_demo === true || lead.is_demo === 'True' || lead.is_demo === 'true' || lead.source === 'demo';
+    const passesSource = isDemoWorkflow ? true : !isDemo;
+    const hasEmail = strNotEmpty(lead.email) && lead.email !== 'None' && lead.email !== 'null' && lead.email_status !== 'missing';
+    const isValidFormat = (lead.email_status === 'valid' || lead.syntax_valid === true || String(lead.syntax_valid).toLowerCase() === 'true') && lead.email_status !== 'invalid' && String(lead.syntax_valid).toLowerCase() !== 'false';
+    const isNotDup = !(lead.is_duplicate === true || String(lead.is_duplicate).toLowerCase() === 'true');
+    const notBounced = String(lead.delivery_status || '').toUpperCase() !== 'BOUNCED' && String(lead.outreach_status || '').toLowerCase() !== 'bounced';
+    return passesSource && hasEmail && isValidFormat && isNotDup && notBounced && matchesSelectedProduct(lead);
+  };
+
+  const isOutreachReady = (lead) => isValidBuyer(lead);
 
   // Helper to categorize excluded reasons
   const getExcludedReason = (lead) => {
-    if (lead.is_duplicate === true || lead.is_duplicate === 'True') {
+    if (lead.is_duplicate === true || String(lead.is_duplicate).toLowerCase() === 'true') {
       return 'Duplicate Lead';
     }
-    if (!strNotEmpty(lead.email) || lead.email_status === 'missing') {
+    if (!strNotEmpty(lead.email) || lead.email_status === 'missing' || lead.email === 'None') {
       return 'Missing Email';
     }
-    if (lead.email_status === 'invalid' || lead.syntax_valid === false || lead.syntax_valid === 'False') {
+    if (lead.email_status === 'invalid' || lead.syntax_valid === false || String(lead.syntax_valid).toLowerCase() === 'false') {
       return 'Invalid Email Syntax';
+    }
+    if (String(lead.delivery_status || '').toUpperCase() === 'BOUNCED' || String(lead.outreach_status || '').toLowerCase() === 'bounced') {
+      return 'Bounced Recipient';
+    }
+    if (!matchesSelectedProduct(lead)) {
+      return 'Product Mismatch';
+    }
+    if (!isDemoWorkflow && (lead.is_demo || lead.source === 'demo')) {
+      return 'Demo Record';
     }
     return 'Excluded';
   };
@@ -197,7 +223,7 @@ export const DiscoverBuyers = () => {
 
       const t3 = setTimeout(() => {
         setSearchStep(4);
-        setSearchStage('4. Deduplicating prospects and filtering valid buyers...');
+        setSearchStage('4. Deduplicating prospects...');
       }, 1900);
 
       const res = await apiService.searchBuyers(payload);
@@ -213,16 +239,17 @@ export const DiscoverBuyers = () => {
       if (count === 0) {
         setEmptyStateType('no_results');
       } else {
-        const validCount = discoveredBuyers.filter(isValidBuyer).length;
+        setActiveTab('outreach_ready');
+        const readyCount = discoveredBuyers.filter(isValidBuyer).length;
+        const missingCount = discoveredBuyers.filter(r => !strNotEmpty(r.email) || r.email_status === 'missing').length;
         setNotification({
           type: 'success',
-          message: `Discovered ${count} prospects: ${validCount} valid buyers extracted and ready for qualification.`
+          message: `Valid Buyers: ${readyCount}. Missing Email: ${missingCount}. Companies without a public format-valid email are kept under Excluded / Needs Email.`
         });
         
-        // Auto-select valid buyers
         const autoSelected = new Set(
           discoveredBuyers
-            .filter(isValidBuyer)
+            .filter(isOutreachReady)
             .map(b => b.lead_id || b.id)
         );
         setSelectedLeadIds(autoSelected);
@@ -266,7 +293,7 @@ export const DiscoverBuyers = () => {
       // Auto-select valid demo buyers
       const autoSelected = new Set(
         sampleBuyers
-          .filter(isValidBuyer)
+          .filter(isOutreachReady)
           .map(b => b.lead_id || b.id)
       );
       setSelectedLeadIds(autoSelected);
@@ -295,7 +322,7 @@ export const DiscoverBuyers = () => {
 
   // Select all valid leads in view
   const toggleSelectAllValid = () => {
-    const validInView = validBuyers.map(r => r.lead_id || r.id);
+    const validInView = displayedLeads.map(r => r.lead_id || r.id);
     const allSelected = validInView.length > 0 && validInView.every(id => selectedLeadIds.has(id));
 
     setSelectedLeadIds(prev => {
@@ -316,10 +343,14 @@ export const DiscoverBuyers = () => {
 
   // Proceed to campaign creation with selected valid leads
   const handleCreateCampaign = () => {
-    if (selectedLeadIds.size === 0) {
+    const readyIds = Array.from(selectedLeadIds).filter((id) => {
+      const lead = results.find((r) => (r.lead_id || r.id) === id);
+      return lead && isOutreachReady(lead);
+    });
+    if (readyIds.length === 0) {
       setNotification({
         type: 'warning',
-        message: 'Please select at least one valid buyer to proceed with outreach.'
+        message: 'Please select at least one outreach-ready buyer (format-valid email) to proceed.'
       });
       return;
     }
@@ -445,30 +476,29 @@ export const DiscoverBuyers = () => {
   const totalDiscovered = results.length;
   const extractedCount = results.filter(r => strNotEmpty(r.company_name || r.company) && (strNotEmpty(r.website) || strNotEmpty(r.source_url) || strNotEmpty(r.snippet))).length || totalDiscovered;
   
-  // Valid buyers: email exists, syntax is valid, not duplicate
+  // Valid buyers: email exists, syntax is valid, not duplicate, correct product, non-bounced
   const validBuyers = results.filter(isValidBuyer);
+  const outreachReadyBuyers = validBuyers;
   const validEmailCount = validBuyers.length;
 
-  // Excluded buyers breakdown
-  const missingEmailBuyers = results.filter(r => !strNotEmpty(r.email) || r.email_status === 'missing');
+  const missingEmailBuyers = results.filter(r => !strNotEmpty(r.email) || r.email_status === 'missing' || r.email === 'None');
   const missingEmailCount = missingEmailBuyers.length;
 
-  const invalidEmailBuyers = results.filter(r => strNotEmpty(r.email) && (r.email_status === 'invalid' || r.syntax_valid === false || r.syntax_valid === 'False'));
+  const invalidEmailBuyers = results.filter(r => strNotEmpty(r.email) && r.email !== 'None' && (r.email_status === 'invalid' || r.syntax_valid === false || String(r.syntax_valid).toLowerCase() === 'false'));
   const invalidEmailCount = invalidEmailBuyers.length;
 
-  const duplicateBuyers = results.filter(r => r.is_duplicate === true || r.is_duplicate === 'True');
+  const duplicateBuyers = results.filter(r => r.is_duplicate === true || String(r.is_duplicate).toLowerCase() === 'true');
   const duplicateCount = duplicateBuyers.length;
 
   const excludedBuyers = results.filter(r => !isValidBuyer(r));
   const excludedCount = excludedBuyers.length;
 
-  // Active dataset based on tabs
-  const displayedLeads = activeTab === 'valid_buyers' 
-    ? validBuyers 
+  const displayedLeads = activeTab === 'outreach_ready'
+    ? validBuyers
     : excludedBuyers.filter(lead => {
-        if (excludedSubFilter === 'missing') return !strNotEmpty(lead.email) || lead.email_status === 'missing';
-        if (excludedSubFilter === 'invalid') return strNotEmpty(lead.email) && (lead.email_status === 'invalid' || lead.syntax_valid === false || lead.syntax_valid === 'False');
-        if (excludedSubFilter === 'duplicate') return lead.is_duplicate === true || lead.is_duplicate === 'True';
+        if (excludedSubFilter === 'missing') return !strNotEmpty(lead.email) || lead.email_status === 'missing' || lead.email === 'None';
+        if (excludedSubFilter === 'invalid') return strNotEmpty(lead.email) && lead.email !== 'None' && (lead.email_status === 'invalid' || lead.syntax_valid === false || String(lead.syntax_valid).toLowerCase() === 'false');
+        if (excludedSubFilter === 'duplicate') return lead.is_duplicate === true || String(lead.is_duplicate).toLowerCase() === 'true';
         return true;
       });
 
@@ -508,7 +538,7 @@ export const DiscoverBuyers = () => {
               )}
             </div>
             <p className="text-xs text-[#94A3B8] mt-0.5">
-              Live Search $\rightarrow$ Extraction $\rightarrow$ Validation $\rightarrow$ Only Valid Emails Enter Qualification
+              Primary results are Valid Buyers only (public format-valid email). Missing-email companies are retained under Excluded.
             </p>
           </div>
         </div>
@@ -608,20 +638,25 @@ export const DiscoverBuyers = () => {
           </div>
 
           <div>
-            <label className="block font-semibold text-slate-300 mb-1">Search Keywords</label>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-1 gap-1">
+              <label className="block font-semibold text-slate-300">Search Keywords</label>
+              <span className="text-[11px] text-[#94A3B8]">
+                Enter the product/commodity or buyer-related terms you want to find on the web.
+              </span>
+            </div>
             <input
               ref={searchInputRef}
               type="text"
               value={keywords}
               onChange={(e) => setKeywords(e.target.value)}
-              placeholder="e.g. sound healing bowl importer, singing bowl distributor, wellness wholesale"
+              placeholder="e.g. rice, sound bowls, green tea (leave empty to search active product)"
               className="w-full px-3.5 py-2.5 rounded-xl bg-[#050816] border border-[#1E293B] text-white focus:outline-none focus:border-purple-500 font-sans"
             />
           </div>
 
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
             <span className="text-[11px] text-[#94A3B8]">
-              * Live Serper search extracts genuine contact details. Missing or invalid emails are filtered before qualification.
+              * Primary table shows only Valid Buyers (public email, format valid, not duplicate). Missing-email companies are not deleted — open Excluded / Needs Email.
             </span>
             <div className="flex items-center gap-2">
               <button
@@ -640,28 +675,20 @@ export const DiscoverBuyers = () => {
       {/* Official 6-Metric Display Summary */}
       <div className="bg-[#0B1220] border border-[#1E293B] rounded-2xl p-4 shadow-xl">
         <div className="text-[11px] font-bold text-slate-300 uppercase tracking-wider mb-3 flex items-center justify-between">
-          <span>Discovery & Extraction Summary</span>
-          <span className="text-slate-400 font-normal">Valid email is a hard gate for AI qualification</span>
+          <span>Buyer Discovery Summary</span>
+          <span className="text-slate-400 font-normal">Primary table = Valid Buyers only (format-valid public email)</span>
         </div>
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
-          <div className="p-3 rounded-xl bg-[#050816] border border-[#1E293B]">
-            <div className="text-[11px] text-[#94A3B8]">Total Discovered</div>
-            <div className="text-xl font-bold text-white mt-0.5">{totalDiscovered}</div>
-          </div>
-          <div className="p-3 rounded-xl bg-[#050816] border border-[#1E293B]">
-            <div className="text-[11px] text-[#94A3B8]">Extracted</div>
-            <div className="text-xl font-bold text-indigo-400 mt-0.5">{extractedCount}</div>
-          </div>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
           <div className="p-3 rounded-xl bg-[#050816] border border-emerald-500/40 bg-emerald-950/15">
-            <div className="text-[11px] text-emerald-400 font-bold">Valid Emails</div>
+            <div className="text-[11px] text-emerald-400 font-bold">Valid Buyers</div>
             <div className="text-xl font-bold text-emerald-300 mt-0.5">{validEmailCount}</div>
           </div>
           <div className="p-3 rounded-xl bg-[#050816] border border-amber-500/20 bg-amber-950/10">
-            <div className="text-[11px] text-amber-400 font-medium">Missing Emails</div>
+            <div className="text-[11px] text-amber-400 font-medium">Missing Email</div>
             <div className="text-xl font-bold text-amber-300 mt-0.5">{missingEmailCount}</div>
           </div>
           <div className="p-3 rounded-xl bg-[#050816] border border-rose-500/20 bg-rose-950/10">
-            <div className="text-[11px] text-rose-400 font-medium">Invalid Emails</div>
+            <div className="text-[11px] text-rose-400 font-medium">Invalid Email</div>
             <div className="text-xl font-bold text-rose-300 mt-0.5">{invalidEmailCount}</div>
           </div>
           <div className="p-3 rounded-xl bg-[#050816] border border-purple-500/20 bg-purple-950/10">
@@ -675,12 +702,12 @@ export const DiscoverBuyers = () => {
       <div className="bg-[#0B1220] border border-[#1E293B] rounded-2xl p-5 shadow-xl space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#1E293B] pb-3">
           {/* Primary View & Excluded Tabs */}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <button
               type="button"
-              onClick={() => setActiveTab('valid_buyers')}
+              onClick={() => setActiveTab('outreach_ready')}
               className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-2 ${
-                activeTab === 'valid_buyers' 
+                activeTab === 'outreach_ready' 
                   ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/25 border border-emerald-400/40' 
                   : 'bg-[#050816] text-slate-400 hover:text-white border border-[#1E293B]'
               }`}
@@ -699,7 +726,7 @@ export const DiscoverBuyers = () => {
               }`}
             >
               <Ban className="w-3.5 h-3.5" />
-              <span>View Excluded ({excludedCount})</span>
+              <span>Excluded / Needs Email ({excludedCount})</span>
             </button>
           </div>
 
@@ -759,24 +786,24 @@ export const DiscoverBuyers = () => {
 
         {/* Primary Header Headline */}
         <div className="flex items-center justify-between">
-          {activeTab === 'valid_buyers' ? (
+          {activeTab === 'outreach_ready' ? (
             <div className="flex items-center gap-2">
               <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
               <h2 className="text-sm font-bold text-white">
-                {validEmailCount} Valid Buyers Found
+                {validEmailCount} Valid Buyers
               </h2>
               <span className="text-xs text-slate-400 hidden sm:inline">
-                · Verified email syntax · Ready for AI Qualification
+                · Public email · Format valid · Not mailbox-verified
               </span>
             </div>
           ) : (
             <div className="flex items-center gap-2">
               <span className="w-2 h-2 rounded-full bg-rose-400"></span>
               <h2 className="text-sm font-bold text-rose-300">
-                {excludedCount} Excluded Prospects
+                {excludedCount} Excluded / Needs Email
               </h2>
               <span className="text-xs text-slate-400 hidden sm:inline">
-                · Missing email, invalid format, or duplicate records excluded from campaign eligibility
+                · Discovered companies retained for enrichment · Not shown as Valid Buyers
               </span>
             </div>
           )}
@@ -801,7 +828,7 @@ export const DiscoverBuyers = () => {
               </div>
               <div className={`flex items-center gap-2 ${searchStep >= 4 ? 'text-emerald-400' : 'text-slate-500'}`}>
                 {searchStep >= 4 ? <CheckCircle2 className="w-4 h-4 flex-shrink-0" /> : <Clock className="w-4 h-4 flex-shrink-0" />}
-                <span>4. Deduplicating and filtering valid email records...</span>
+                <span>4. Deduplicating discovered companies...</span>
               </div>
             </div>
           </div>
@@ -879,7 +906,7 @@ export const DiscoverBuyers = () => {
             <div>
               <h3 className="text-base font-bold text-[#F8FAFC]">Ready to Discover Buyers</h3>
               <p className="text-xs text-[#94A3B8] mt-1 leading-relaxed">
-                Configure your target market and click <b>Discover Buyers</b> to locate verified international prospects.
+                Configure your target market and click <b>Discover Buyers</b> to locate potential international companies.
               </p>
             </div>
             <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
@@ -907,9 +934,9 @@ export const DiscoverBuyers = () => {
           /* Empty state for current tab */
           <div className="p-8 rounded-xl bg-[#050816] border border-[#1E293B] text-center space-y-3">
             <p className="text-xs text-slate-400">
-              {activeTab === 'valid_buyers' 
-                ? 'No valid email buyers found in the current search. Review excluded records or retry discovery.' 
-                : 'No excluded prospects in this category.'}
+              {activeTab === 'outreach_ready'
+                ? 'No Valid Buyers in this search — no public format-valid email was extracted. Open Excluded / Needs Email to review retained companies.'
+                : 'No excluded records in this category.'}
             </p>
           </div>
         ) : viewMode === 'table' ? (
@@ -918,12 +945,12 @@ export const DiscoverBuyers = () => {
             <table className="w-full text-left text-xs font-sans">
               <thead className="bg-[#050816] text-slate-300 border-b border-[#1E293B] font-semibold uppercase tracking-wider text-[11px]">
                 <tr>
-                  {activeTab === 'valid_buyers' && (
+                  {activeTab === 'outreach_ready' && (
                     <th className="p-3 w-8">
                       <button
                         type="button"
                         onClick={toggleSelectAllValid}
-                        title="Select all valid buyers"
+                        title="Select all outreach-ready buyers"
                         className="text-slate-400 hover:text-white cursor-pointer"
                       >
                         <CheckSquare className="w-4 h-4" />
@@ -933,6 +960,7 @@ export const DiscoverBuyers = () => {
                   <th className="p-3">Company & Contact</th>
                   <th className="p-3">Country</th>
                   <th className="p-3">Buyer Type</th>
+                  <th className="p-3">Source</th>
                   <th className="p-3">Website</th>
                   <th className="p-3">Email Address</th>
                   <th className="p-3">Email Status</th>
@@ -946,7 +974,8 @@ export const DiscoverBuyers = () => {
                   const id = lead.lead_id || lead.id;
                   const isValid = isValidBuyer(lead);
                   const isSelected = selectedLeadIds.has(id);
-                  const contactDisplay = lead.contact_name || 'Company Team';
+                  const contactDisplay = strNotEmpty(lead.contact_name) ? lead.contact_name : '—';
+                  const isReady = isOutreachReady(lead);
                   const excludedReason = getExcludedReason(lead);
 
                   return (
@@ -954,8 +983,9 @@ export const DiscoverBuyers = () => {
                       key={id} 
                       className={`hover:bg-[#050816]/60 transition-colors ${isSelected && isValid ? 'bg-purple-950/20' : ''}`}
                     >
-                      {activeTab === 'valid_buyers' && (
+                      {activeTab === 'outreach_ready' && (
                         <td className="p-3">
+                          {isReady ? (
                           <button
                             type="button"
                             onClick={() => toggleSelectLead(id)}
@@ -967,6 +997,9 @@ export const DiscoverBuyers = () => {
                               <Square className="w-4 h-4 text-slate-600" />
                             )}
                           </button>
+                          ) : (
+                            <span className="text-slate-700">—</span>
+                          )}
                         </td>
                       )}
 
@@ -994,6 +1027,10 @@ export const DiscoverBuyers = () => {
                         <span className="px-2 py-0.5 rounded bg-purple-500/10 text-purple-300 border border-purple-500/20 text-[11px]">
                           {lead.buyer_type || 'Distributor'}
                         </span>
+                      </td>
+
+                      <td className="p-3 text-slate-400 text-[11px] capitalize">
+                        {(lead.source || lead.source_platform || 'serper').toString().replace(/_/g, ' ')}
                       </td>
 
                       <td className="p-3 text-slate-400">
@@ -1026,7 +1063,7 @@ export const DiscoverBuyers = () => {
                         {isValid ? (
                           <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 inline-flex items-center gap-1">
                             <CheckCircle2 className="w-3 h-3" />
-                            <span>Valid Email</span>
+                            <span>Format Valid</span>
                           </span>
                         ) : (
                           <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-rose-500/15 text-rose-400 border border-rose-500/30 inline-flex items-center gap-1">
@@ -1047,7 +1084,7 @@ export const DiscoverBuyers = () => {
                           </span>
                         ) : (
                           <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
-                            {lead.qualification_status === 'needs_review' ? 'Needs Review' : 'Pending AI'}
+                            {lead.qualification_status === 'needs_review' ? 'Needs Review' : 'Not Classified'}
                           </span>
                         )}
                       </td>
@@ -1100,7 +1137,7 @@ export const DiscoverBuyers = () => {
               const id = lead.lead_id || lead.id;
               const isValid = isValidBuyer(lead);
               const isSelected = selectedLeadIds.has(id);
-              const contactDisplay = lead.contact_name || 'Company Team';
+              const contactDisplay = strNotEmpty(lead.contact_name) ? lead.contact_name : '—';
               const excludedReason = getExcludedReason(lead);
 
               return (
@@ -1141,7 +1178,7 @@ export const DiscoverBuyers = () => {
                     <div className="flex items-center gap-1">
                       {isValid ? (
                         <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
-                          Valid Email
+                          Format Valid
                         </span>
                       ) : (
                         <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-500/15 text-rose-400 border border-rose-500/30">

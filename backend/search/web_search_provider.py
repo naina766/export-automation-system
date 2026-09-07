@@ -7,7 +7,7 @@ import os
 import sys
 import re
 import asyncio
-from pathlib import Path
+from urllib.parse import urlparse
 import httpx
 from typing import List, Dict, Any, Optional, Union
 
@@ -63,6 +63,94 @@ class WebBuyerSearchProvider(BuyerSearchProvider):
                 return False
         return True
 
+    @staticmethod
+    def _clean_query_text(text: str) -> str:
+        cleaned = re.sub(r"[()\"']", "", text or "")
+        return re.sub(r"\s+", " ", cleaned).strip()
+
+    @staticmethod
+    def _intent_phrases(buyer_type: Optional[str]) -> List[str]:
+        """Map UI buyer type to short search intents. Never append redundant 'wholesale importer'."""
+        raw = (buyer_type or "").strip()
+        lower = raw.lower()
+        if not raw or lower in {"all", "all buyer types"}:
+            return ["wholesale", "importer", "distributor"]
+        if "wholesale importer" in lower or ( "wholesale" in lower and "import" in lower):
+            return ["wholesale", "importer", "distributor"]
+        if "import" in lower:
+            return ["importer", "wholesale", "distributor"]
+        if "distribut" in lower:
+            return ["distributor", "wholesale", "importer"]
+        if "retail" in lower:
+            return ["retailer", "wholesale", "distributor"]
+        return [raw, "wholesale", "distributor"]
+
+    @staticmethod
+    def _sanitize_search_keywords(keywords: Optional[Union[str, List[str]]]) -> Optional[str]:
+        """
+        Sanitizes user-provided search keywords to form the primary search subject.
+        Strips query injection characters, search operators, and collapses whitespace.
+        Ignores catalog keyword dumps (multi-item lists or comma-separated lists).
+        """
+        if not keywords:
+            return None
+
+        if isinstance(keywords, list):
+            # If multiple items (e.g. catalog keyword list), do not treat as a single user search keyword
+            if len(keywords) != 1:
+                return None
+            candidate = str(keywords[0] or "").strip()
+        else:
+            candidate = str(keywords).strip()
+
+        # If empty, comma-separated dump (catalog keyword list), or overly long, reject as user search keyword
+        if not candidate or "," in candidate or len(candidate) > 80:
+            return None
+
+        # Strip HTML tags if present
+        candidate = re.sub(r"<[^>]*>", " ", candidate)
+        # Sanitize query injection characters: quotes, parens, brackets, angle brackets, backticks, semicolons, backslashes
+        cleaned = re.sub(r"[()\"'<>`{};\\]", " ", candidate)
+        # Strip search operator prefixes like site:, filetype:, inurl:
+        cleaned = re.sub(r"\b(site|filetype|inurl|allinurl|link):[^\s]+", " ", cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(r"\s+", " ", cleaned).strip()
+
+        if not cleaned:
+            return None
+
+        return cleaned[:60]
+
+    def build_search_queries(
+        self,
+        product: str,
+        country: Optional[str] = None,
+        buyer_type: Optional[str] = None,
+        keywords: Optional[Union[str, List[str]]] = None
+    ) -> List[str]:
+        """
+        Focused queries for buyer discovery.
+        If user explicitly provides search keywords, those keywords become the PRIMARY SEARCH SUBJECT.
+        If keywords are empty/unspecified, falls back to the active catalog product.
+        """
+        clean_product = (product or "Singing Bowls").strip()
+        user_keyword_subject = self._sanitize_search_keywords(keywords)
+        search_subject = user_keyword_subject or clean_product
+
+        country_part = ""
+        if country and country.lower() not in ["all", "all countries", ""]:
+            country_part = country.strip()
+
+        queries: List[str] = []
+        for intent in self._intent_phrases(buyer_type)[:3]:
+            parts = [search_subject, intent]
+            if country_part:
+                parts.append(country_part)
+            q = self._clean_query_text(" ".join(parts))
+            if q and q not in queries:
+                queries.append(q)
+
+        return queries[:3]
+
     def build_search_query(
         self,
         product: str,
@@ -70,34 +158,20 @@ class WebBuyerSearchProvider(BuyerSearchProvider):
         buyer_type: Optional[str] = None,
         keywords: Optional[Union[str, List[str]]] = None
     ) -> str:
-        """Construct an optimized B2B query string compliant with search API free-tier patterns."""
-        clean_product = (product or "Singing Bowls").strip()
-        terms = [clean_product]
+        """Primary query string (first focused query)."""
+        queries = self.build_search_queries(product, country, buyer_type, keywords)
+        clean_fallback = self._sanitize_search_keywords(keywords) or (product or "Singing Bowls")
+        return queries[0] if queries else self._clean_query_text(clean_fallback)
 
-        # Buyer type intent
-        if buyer_type and buyer_type.lower() not in ["all", "all buyer types", ""]:
-            terms.append(f"{buyer_type.strip()} wholesale importer")
-        else:
-            terms.append("wholesale distributor importer")
-
-        # Target country
-        if country and country.lower() not in ["all", "all countries", ""]:
-            terms.append(country.strip())
-
-        # Keywords handling
-        if keywords:
-            if isinstance(keywords, str) and keywords.strip():
-                terms.append(keywords.strip())
-            elif isinstance(keywords, list):
-                kw_str = " ".join([k.strip() for k in keywords if k.strip()])
-                if kw_str:
-                    terms.append(kw_str)
-
-        query_str = " ".join(terms)
-        # Strip parenthesis and quotes for Serper free-tier compatibility
-        query_str = re.sub(r"[()\"']", "", query_str)
-        query_str = re.sub(r"\s+", " ", query_str).strip()
-        return query_str
+    @staticmethod
+    def _canonical_result_key(item: Dict[str, Any]) -> str:
+        link = str(item.get("link") or item.get("url") or "").strip()
+        parsed = urlparse(link)
+        host = (parsed.netloc or "").lower()
+        if host.startswith("www."):
+            host = host[4:]
+        path = (parsed.path or "/").rstrip("/") or "/"
+        return f"{host}{path}" if host else link.lower()
 
     async def search(
         self,
@@ -132,39 +206,58 @@ class WebBuyerSearchProvider(BuyerSearchProvider):
                 f"Search provider '{self.provider}' is not configured. Add a valid SEARCH_API_KEY in the backend environment."
             )
 
-        query = self.build_search_query(product, country, buyer_type, keywords)
-        raw_items = []
+        queries = self.build_search_queries(product, country, buyer_type, keywords)
+        raw_items: List[Dict[str, Any]] = []
 
         try:
             async with httpx.AsyncClient(timeout=20.0) as client:
-                if self.provider == "serper":
-                    raw_items = await self._search_serper(client, query, limit)
-                    if not raw_items:
-                        fallback_query = f"{product} wholesale distributor {country or ''}".strip()
-                        raw_items = await self._search_serper(client, fallback_query, limit)
-                elif self.provider == "brave":
-                    raw_items = await self._search_brave(client, query, limit)
-                    if not raw_items:
-                        fallback_query = f"{product} wholesale distributor {country or ''}".strip()
-                        raw_items = await self._search_brave(client, fallback_query, limit)
-                elif self.provider == "tavily":
-                    raw_items = await self._search_tavily(client, query, limit)
-                elif self.provider == "serpapi":
-                    raw_items = await self._search_serpapi(client, query, limit)
-                elif self.provider == "google_cse":
-                    raw_items = await self._search_google_cse(client, query, limit)
-                else:
-                    raw_items = await self._search_serper(client, query, limit)
+                async def run_provider_query(q: str) -> List[Dict[str, Any]]:
+                    if self.provider == "brave":
+                        return await self._search_brave(client, q, limit)
+                    if self.provider == "tavily":
+                        return await self._search_tavily(client, q, limit)
+                    if self.provider == "serpapi":
+                        return await self._search_serpapi(client, q, limit)
+                    if self.provider == "google_cse":
+                        return await self._search_google_cse(client, q, limit)
+                    return await self._search_serper(client, q, limit)
+
+                seen_keys = set()
+                for q in queries:
+                    batch = await run_provider_query(q)
+                    for item in batch:
+                        key = self._canonical_result_key(item)
+                        if key and key in seen_keys:
+                            continue
+                        if key:
+                            seen_keys.add(key)
+                        raw_items.append(item)
+                    if len(raw_items) >= max(limit, 10):
+                        break
+
+                if not raw_items:
+                    fallback_subject = self._sanitize_search_keywords(keywords) or (product or "Singing Bowls")
+                    fallback_query = self._clean_query_text(f"{fallback_subject} wholesale {country or ''}")
+                    raw_items = await run_provider_query(fallback_query)
 
                 parsed_items = [parse_search_item(item, country, buyer_type) for item in raw_items]
 
-                # Concurrently inspect public websites for missing contact info (bounded concurrency with 3.5s timeout)
+                enrich_timeout = float(os.getenv("SEARCH_ENRICH_TIMEOUT", "12"))
+                enrich_conc = int(os.getenv("SEARCH_ENRICH_CONCURRENCY", "5"))
+                sem = asyncio.Semaphore(max(1, min(enrich_conc, 8)))
+
                 async def enrich_item(item):
-                    if not item.get("email") and item.get("website"):
+                    if item.get("email") or not item.get("website"):
+                        return item
+                    async with sem:
                         try:
-                            extra_contact = await extract_contact_from_public_website(item["website"], client)
-                            if extra_contact.get("email"):
-                                item["email"] = extra_contact["email"]
+                            extra_contact = await asyncio.wait_for(
+                                extract_contact_from_public_website(item["website"], client),
+                                timeout=6.0
+                            )
+                            discovered_email = extra_contact.get("email")
+                            if discovered_email:
+                                item["email"] = discovered_email
                             if extra_contact.get("phone") and not item.get("phone"):
                                 item["phone"] = extra_contact["phone"]
                         except Exception:
@@ -172,11 +265,13 @@ class WebBuyerSearchProvider(BuyerSearchProvider):
                     return item
 
                 try:
-                    tasks = [enrich_item(item) for item in parsed_items[:min(limit, 10)]]
-                    enriched = await asyncio.wait_for(asyncio.gather(*tasks), timeout=3.5)
-                    parsed_items = list(enriched) + parsed_items[min(limit, 10):]
+                    cap = min(len(parsed_items), max(limit, 10))
+                    await asyncio.wait_for(
+                        asyncio.gather(*[enrich_item(item) for item in parsed_items[:cap]]),
+                        timeout=max(4.0, enrich_timeout)
+                    )
                 except (asyncio.TimeoutError, Exception):
-                    # Gracefully keep parsed search snippet data if external enrichment took too long
+                    # Keep parsed rows even if enrichment is slow or incomplete
                     pass
 
 

@@ -1016,7 +1016,7 @@ export const SendCampaign = () => {
                   <div className="text-xs font-bold text-white flex items-center gap-2">
                     <span>{currentCatalogFile}</span>
                     <span className="text-[10px] px-2 py-0.2 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                      ✓ Verified PDF
+                      Catalog PDF
                     </span>
                   </div>
                   <p className="text-[11px] text-slate-400 mt-0.5">

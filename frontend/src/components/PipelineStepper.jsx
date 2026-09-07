@@ -20,7 +20,7 @@ export const PipelineStepper = ({ currentStage = 1, stats = {} }) => {
       step: 1,
       title: 'Buyer Discovery',
       count: stats.total_leads ?? pipeline.discovery ?? 0,
-      suffix: 'found',
+      suffix: 'discovered',
       icon: Search,
       path: '/discover'
     },
@@ -36,7 +36,7 @@ export const PipelineStepper = ({ currentStage = 1, stats = {} }) => {
       step: 3,
       title: 'Validation',
       count: stats.valid_emails ?? pipeline.validation ?? 0,
-      suffix: 'valid',
+      suffix: 'format valid',
       icon: ShieldCheck,
       path: '/discover'
     },
@@ -52,7 +52,7 @@ export const PipelineStepper = ({ currentStage = 1, stats = {} }) => {
       step: 5,
       title: 'Gmail Campaign',
       count: stats.successful_sends ?? stats.sent_emails ?? pipeline.outreach ?? 0,
-      suffix: 'sent',
+      suffix: 'SMTP accepted',
       icon: Send,
       path: '/send'
     },

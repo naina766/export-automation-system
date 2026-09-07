@@ -59,7 +59,7 @@ const PageLayout = ({ children, systemStatus }) => {
       case '/discover':
         return { 
           title: 'Discover International Buyers', 
-          subtitle: `Find verified international buyers for ${prodName}` 
+          subtitle: `Discover potential buyers for ${prodName}` 
         };
       case '/upload':
         return { 

@@ -125,7 +125,7 @@ export const Classification = () => {
             </span>
           </div>
           <p className="text-xs text-[#94A3B8] max-w-2xl leading-relaxed">
-            AI evaluates business suitability and scores commercial fit specifically for {selectedProduct?.name || 'your export product line'}.
+            AI assesses commercial fit for {selectedProduct?.name || 'your export product line'}. This is an assessment, not proof that a company is definitely a buyer.
           </p>
         </div>
 

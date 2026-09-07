@@ -96,13 +96,13 @@ export const Dashboard = () => {
 
   // Format Emails Sent subtext
   const emailsSentSubtext = testSends > 0 
-    ? `${testSends} test email${testSends > 1 ? 's' : ''} verified`
+    ? `${testSends} test email${testSends > 1 ? 's' : ''} (not production)`
     : 'Direct email outreach';
 
   // Data hygiene note
   const invalidTotal = (hygiene.invalid_emails || 0) + (hygiene.missing_emails || 0);
   const hygieneStatusNote = invalidTotal === 0 
-    ? 'All buyer contacts are verified and ready for outreach.' 
+    ? 'Format-valid contacts are outreach-ready; missing emails stay in the discovered pool.' 
     : 'Review excluded contacts before launching outreach.';
 
   const activityColumns = [
@@ -218,9 +218,9 @@ export const Dashboard = () => {
           color="purple"
         />
         <StatCard
-          title="Valid Contacts"
+          title="Outreach Ready"
           value={metrics.valid_contact_emails ?? metrics.valid_emails ?? 0}
-          subtext="Verified email addresses"
+          subtext="Format-valid emails"
           icon={CheckCircle}
           color="emerald"
         />

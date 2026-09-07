@@ -36,22 +36,79 @@ def test_query_construction_with_parameters():
     )
     assert "Himalayan Singing Bowls" in query
     assert "United States" in query
-    assert "Distributor" in query
-    assert "sound healing" in query
-    assert "wellness" in query
+    assert "distributor" in query.lower()
+    assert "sound healing" not in query
+    assert "wholesale importer" not in query.lower()
 
-def test_query_construction_with_string_keywords():
+def test_explicit_keywords_override_product_as_search_subject():
+    provider = WebBuyerSearchProvider()
+    # When user explicitly enters 'rice', rice becomes the primary search subject
+    query = provider.build_search_query(
+        product="Himalayan Sound Healing Bowls",
+        country="United States",
+        buyer_type="Wholesale Importer",
+        keywords="rice"
+    )
+    assert query == "rice wholesale United States"
+    assert "Himalayan Sound Healing Bowls" not in query
+
+    queries = provider.build_search_queries(
+        product="Himalayan Sound Healing Bowls",
+        country="United States",
+        buyer_type="Wholesale Importer",
+        keywords="rice"
+    )
+    assert queries[0] == "rice wholesale United States"
+    assert queries[1] == "rice importer United States"
+    assert queries[2] == "rice distributor United States"
+    assert not any("Himalayan Sound Healing Bowls" in q for q in queries)
+
+def test_empty_keywords_fall_back_to_product():
+    provider = WebBuyerSearchProvider()
+    # When keywords are empty or whitespace, search subject falls back to product
+    query = provider.build_search_query(
+        product="Himalayan Sound Healing Bowls",
+        country="United States",
+        buyer_type="Wholesale Importer",
+        keywords=""
+    )
+    assert query == "Himalayan Sound Healing Bowls wholesale United States"
+
+    queries = provider.build_search_queries(
+        product="Himalayan Sound Healing Bowls",
+        country="United States",
+        buyer_type="Wholesale Importer",
+        keywords=None
+    )
+    assert queries[0] == "Himalayan Sound Healing Bowls wholesale United States"
+    assert queries[1] == "Himalayan Sound Healing Bowls importer United States"
+    assert queries[2] == "Himalayan Sound Healing Bowls distributor United States"
+
+def test_keyword_sanitization_strips_operators_and_injection():
     provider = WebBuyerSearchProvider()
     query = provider.build_search_query(
-        product="Singing Bowls",
-        country="Germany",
+        product="Himalayan Sound Healing Bowls",
+        country="United States",
         buyer_type="Wholesale Importer",
-        keywords="meditation yoga studios"
+        keywords=' "rice" ; <script> site:google.com '
     )
-    assert "Singing Bowls" in query
-    assert "Germany" in query
-    assert "Wholesale Importer" in query
-    assert "meditation yoga studios" in query
+    assert query == "rice wholesale United States"
+    assert "site:" not in query
+    assert "<script>" not in query
+
+def test_query_ignores_catalog_keyword_dump():
+    provider = WebBuyerSearchProvider()
+    queries = provider.build_search_queries(
+        product="Himalayan Sound Healing Bowls",
+        country="United States",
+        buyer_type="Wholesale Importer",
+        keywords="Himalayan sound healing bowls, sound healing bowls wholesale, Tibetan singing bowls importer, meditation bowls distributor"
+    )
+    blob = " ".join(queries).lower()
+    assert "himalayan sound healing bowls wholesale united states" in blob
+    assert "himalayan sound healing bowls importer united states" in blob
+    assert "tibetan singing bowls importer" not in blob
+    assert blob.count("wholesale importer") == 0
 
 def test_clean_company_name():
     assert clean_company_name("Sound Healing LLC - Official Wholesale Store", "soundhealing.com") == "Sound Healing LLC"

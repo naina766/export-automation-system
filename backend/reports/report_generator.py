@@ -233,7 +233,7 @@ class ReportGenerator:
                     metrics["test_attempts"] = test_attempts
                     metrics["campaigns_count"] = len(prod_campaigns)
                     metrics["delivery_confirmed"] = 0
-                    metrics["delivery_note"] = "SMTP submission verified; recipient delivery unconfirmed without DSN/IMAP integration."
+                    metrics["delivery_note"] = "SMTP accepted; recipient mailbox delivery is not confirmed."
 
                     annotated_logs.reverse()
                     metrics["recent_activity"] = annotated_logs[:40]
@@ -285,17 +285,17 @@ class ReportGenerator:
             "# EXECUTIVE KPI SUMMARY",
             "Metric,Value",
             f"Total Leads Discovered,{metrics['total_leads']}",
-            f"Valid Contacts (Syntax & Domain),{metrics['valid_emails']}",
+            f"Valid Contacts (Format Valid),{metrics['valid_emails']}",
             f"Invalid Contacts,{metrics['invalid_emails']}",
             f"Missing Contacts,{metrics['missing_emails']}",
             f"Duplicates Removed,{metrics['duplicates']}",
             f"Qualified B2B Buyers,{metrics['qualified_buyers']}",
             f"Campaign Ready Pool,{metrics['campaign_ready']}",
             f"Emails Attempted,{metrics['emails_attempted']}",
-            f"Successful Sends (SMTP),{metrics['successful_sends']}",
-            f"Test Dispatches (Verified),{metrics.get('test_sends', 0)}",
+            f"SMTP Accepted (Production),{metrics['successful_sends']}",
+            f"Test Dispatches (Separated),{metrics.get('test_sends', 0)}",
             f"Failed Sends,{metrics['failed_sends']}",
-            f"Delivery Success Rate,{rate_display}",
+            f"SMTP Accept Rate,{rate_display}",
             "",
             "# OUTREACH ACTIVITY LOG",
             "timestamp,buyer_name,company,email,classification,mode,status,error,campaign"
